@@ -1,7 +1,4 @@
 
-
-
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -130,19 +127,27 @@ def get_theme_css(theme):
                 box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
                 text-align: center;
             }
-            
             .main-header {
-                font-family: 'Segoe UI', sans-serif;
-                font-size: 3.2rem;
-                font-weight: 800;
-                background: linear-gradient(90deg, #0066cc 0%, #0099ff 100%);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                margin: 0;
-                letter-spacing: 0.5px;
-                line-height: 1.2;
-            }
-            
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 3.2rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #1d4ed8, #38bdf8, #22c55e, #1d4ed8);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0;
+    letter-spacing: 0.5px;
+    line-height: 1.2;
+    animation: socLightHeadingGlow 8s ease-in-out infinite;
+}
+
+/* Add this keyframes block in the same light section (below .main-header is fine) */
+@keyframes socLightHeadingGlow {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
             .header-subtitle {
                 font-size: 1.2rem;
                 color: var(--text-secondary);
