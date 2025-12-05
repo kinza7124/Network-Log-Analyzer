@@ -1,0 +1,17 @@
+# Network Security Dashboard Configuration
+# Copy this file to .env and fill in your actual credentials
+
+# Email Configuration for Alert Escalation
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SENDER_EMAIL=""
+SENDER_PASSWORD=
+ADMIN_EMAIL=""
+EMAIL_ENABLED=true
+
+# Claude API Configuration (Optional - for advanced ChatOps)
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+
+
+
