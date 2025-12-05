@@ -3399,12 +3399,18 @@ with tab5:
     
     st.markdown("### Email Configuration")
     email_status = "Enabled" if EMAIL_CONFIG['enabled'] else "Disabled"
-    status_color = "#00ff9d" if EMAIL_CONFIG['enabled'] else "#ff2b2b" if st.session_state.theme == 'dark' else "#dc3545"
+    status_color = "#00b771" if (EMAIL_CONFIG['enabled'] and st.session_state.theme == 'dark') else "#0066cc" if (EMAIL_CONFIG['enabled'] and st.session_state.theme == 'light') else "#ff2b2b" if st.session_state.theme == 'dark' else "#dc3545"
+    email_bg = "#ffffff" if st.session_state.theme == "light" else "#1A1C24"
+    email_text_color = "#111827" if st.session_state.theme == "light" else "#e6e6e6"
+
     st.markdown(f"""
-    <div style="background-color: #1A1C24; padding: 15px; border-radius: 8px; border-left: 4px solid {status_color}; margin: 10px 0; color: #e6e6e6;">
-        <strong>Email Alerts:</strong> <span style="color: {status_color}; font-weight: 600;">{email_status}</span>
+    <div style="background-color: {email_bg}; padding: 15px; border-radius: 8px;
+                border-left: 4px solid {status_color}; margin: 10px 0; color: {email_text_color};">
+        <strong>Email Alerts:</strong>
+        <span style="color: {status_color}; font-weight: 600;">{email_status}</span>
     </div>
     """, unsafe_allow_html=True)
+
     
     if EMAIL_CONFIG['enabled']:
         st.write(f"**SMTP Server:** {EMAIL_CONFIG['smtp_server']}:{EMAIL_CONFIG['smtp_port']}")
