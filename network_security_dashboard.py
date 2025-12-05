@@ -88,8 +88,8 @@ def get_theme_css(theme):
         <style>
             /* GLOBAL LIGHT THEME VARIABLES - HIGH CONTRAST */
             :root {
-                --primary-color: #0066cc;        /* Professional Blue */
-                --primary-hover: #0052a3;
+                --primary-color: #8BCBFC;        /* Deeper blue */
+                --primary-hover: #8BCBFC;
                 --background-color: #ffffff;     /* White */
                 --secondary-bg: #f8f9fa;         /* Light Gray Cards */
                 --card-border: #d1d5db;          /* Medium Gray Border */
@@ -122,7 +122,7 @@ def get_theme_css(theme):
 
             /* Main Header Styling */
             .main-header-container {
-                background: linear-gradient(135deg, rgba(0, 102, 204, 0.15) 0%, rgba(0, 102, 204, 0.05) 100%);
+                background: linear-gradient(90deg, rgba(0, 102, 204, 0.15) 0%, rgba(0, 102, 204, 0.05) 100%);
                 padding: 2rem;
                 border-radius: 12px;
                 margin-bottom: 2rem;
@@ -495,7 +495,16 @@ def get_theme_css(theme):
                 font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
                 line-height: 1.6;
             }
-            
+            /* Header – solid black strip above title in dark mode */
+header[data-testid="stHeader"] {
+    background: #000000;              /* pure black */
+    backdrop-filter: none;
+    border-bottom: 1px solid rgba(34, 197, 94, 0.30);
+}
+header[data-testid="stHeader"] * {
+    color: var(--text-main) !important;
+}
+
             /* Force all text in app to be white */
             .stApp,
             .stApp *,
@@ -2356,7 +2365,103 @@ with tab1:
                             font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_flag, use_container_width=True)
-                
+                st.subheader("3D PCA Attack Space (Dataset EDA)")
+
+                # Build a numeric feature matrix for PCA
+                # Exclude obvious non-numeric or meta columns
+                exclude_cols = {
+                    'timestamp', 'src_ip', 'dst_ip', 'nlp_log',
+                    'severity', 'label', 'anomaly_prediction'
+                }
+                pca_source = df_all.copy()
+
+                numeric_cols = [
+                    c for c in pca_source.columns
+                    if c not in exclude_cols and pd.api.types.is_numeric_dtype(pca_source[c])
+                ]
+
+                if len(numeric_cols) >= 3:
+                    # Sample for performance
+                    max_points = 4000
+                    if len(pca_source) > max_points:
+                        pca_source = pca_source.sample(max_points, random_state=42)
+
+                    # Recompute anomalies/normal mask on sampled data
+                    pca_source['is_anomaly'] = pca_source.get('anomaly_prediction', -1) == -1
+
+                    from sklearn.decomposition import PCA
+                    pca = PCA(n_components=3)
+                    X_pca = pca.fit_transform(pca_source[numeric_cols].values)
+
+                    # Prepare a DataFrame for Plotly
+                    pca_df = pd.DataFrame(
+                        X_pca,
+                        columns=['PC1', 'PC2', 'PC3']
+                    )
+                    pca_df['Traffic Type'] = np.where(
+                        pca_source['is_anomaly'],
+                        'Anomaly',
+                        'Normal'
+                    )
+                    pca_df['anomaly_score'] = pca_source.get('anomaly_score', 0.0).values
+
+                    # Theme-aware colors
+                    if st.session_state.theme == 'dark':
+                        color_discrete_map = {
+                            'Normal': '#00ff9d',
+                            'Anomaly': '#ff4757'
+                        }
+                        plotly_template = "plotly_dark"
+                        bg_color = 'rgba(0,0,0,0)'
+                        font_color = '#f0f4f8'
+                    else:
+                        color_discrete_map = {
+                            'Normal': '#198754',
+                            'Anomaly': '#dc3545'
+                        }
+                        plotly_template = "plotly_white"
+                        bg_color = 'rgba(0,0,0,0)'
+                        font_color = '#212529'
+
+                    fig_3d = px.scatter_3d(
+                        pca_df,
+                        x='PC1',
+                        y='PC2',
+                        z='PC3',
+                        color='Traffic Type',
+                        color_discrete_map=color_discrete_map,
+                        size='anomaly_score',
+                        size_max=12,
+                        opacity=0.85,
+                        title="3D PCA: Normal vs Anomaly (Dataset EDA)",
+                        template=plotly_template
+                    )
+
+                    fig_3d.update_layout(
+                        paper_bgcolor=bg_color,
+                        plot_bgcolor=bg_color,
+                        font_color=font_color,
+                        legend=dict(
+                            bgcolor='rgba(0,0,0,0)'
+                        )
+                    )
+
+                    st.plotly_chart(fig_3d, use_container_width=True)
+
+                    with st.expander("Interpretation: 3D PCA Attack Space"):
+                        st.markdown("""
+                        **What this 3D view shows:**
+                        - Each point is a network flow projected into 3 principal components.
+                        - **Green points** represent traffic GHF-ART considers normal.
+                        - **Red points** represent anomalous traffic (potential attacks).
+                        
+                        **Insight:**
+                        - Tight normal clusters vs scattered anomalies often indicate clear separation in feature space.
+                        - Dense red regions can reveal attack campaigns targeting similar services or protocols.
+                        """)
+                else:
+                    st.info("Not enough numeric features to build a 3D PCA view in Dataset EDA.")
+
                 # Heatmap
                 if 'service' in df_anomalies.columns and 'protocol_type' in df_anomalies.columns:
                     st.subheader("Service-Protocol Correlation")
@@ -2844,6 +2949,8 @@ with tab1:
                             - Monitor REJ, RSTO, RSTR flags as clear attack indicators
                             - High SF with high data transfer = potential data exfiltration
                             """)
+
+                            
             else:
                 st.info("No live alerts available. Start monitoring to see real-time attack visualizations.")
         else:
