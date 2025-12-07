@@ -19,22 +19,14 @@ import threading
 import random
 import re
 import html
-
-
-
 # Load environment variables - try .env first, then env_template.txt as fallback
 if not load_dotenv():
     # If .env doesn't exist, try loading from env_template.txt
     if Path('env_template.txt').exists():
         load_dotenv('env_template.txt')
-
-
-
 # Import model classes
 from train_model import GHF_ART_Optimized
-
-
-
+from claude_chatbot import ClaudeSecurityChatbot
 # Page config
 st.set_page_config(
     page_title="Network Security SOC Dashboard",
@@ -45,15 +37,12 @@ st.set_page_config(
 # ==========================================
 # ENHANCED THEME SYSTEM WITH TOGGLE
 # ==========================================
-
 # Initialize theme in session state
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'  # Default to dark mode
-
 # Theme toggle in sidebar
 st.sidebar.title("🔧 Control Panel")
 st.sidebar.markdown("---")
-
 # Theme selector at the top of sidebar
 theme_options = {
     "🌙 Dark Mode": "dark",
