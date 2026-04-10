@@ -2109,7 +2109,7 @@ with tab1:
                     time_col1, time_col2 = st.columns(2)
                     
                     with time_col1:
-                        df_anomalies['hour'] = df_anomalies['timestamp'].dt.floor('1H')
+                        df_anomalies['hour'] = df_anomalies['timestamp'].dt.floor('h')
                         timeline = df_anomalies.groupby('hour').size().reset_index(name='count')
                         
                         plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
