@@ -264,6 +264,37 @@ streamlit run network_security_dashboard.py
 
 ```
 
+## Next Steps
+
+Planned extensions: live packet capture (PCAP) analysis, and turning ChatOps into a tool-using AI agent.
+
+### 1. PCAP File Analysis
+
+- Add `.pcap` upload to the **Test Data** tab
+- Convert packets into flows (one record per connection) with [NFStream](https://www.nfstream.org/)
+- Map each flow to the model's features, run detection and raise alerts as usual
+
+### 2. Live Packet Capture
+
+- Background worker that captures from a network interface (NFStream live mode; Npcap and admin rights needed on Windows)
+- Store flows and alerts in SQLite instead of `attack_alerts.json`, so the dashboard and ChatOps share one data source
+- Auto-refresh only the alert panels with `st.fragment(run_every=...)` instead of rerunning the whole page
+- Only capture on networks you own or are authorised to monitor
+
+### 3. Agent-Based ChatOps
+
+- Migrate `claude_chatbot.py` from raw `aiohttp` requests to the official `anthropic` Python SDK, using its Tool Runner (`@beta_tool` + `client.beta.messages.tool_runner`) on a current Claude model
+- Give the assistant tools such as `query_alerts(severity, since)`, `top_talkers(window)`, `get_flow(flow_id)`, `summarize_pcap(file)`, `lookup_host(ip)` and `draft_escalation(alert_ids)`
+- Send the model summaries and aggregates, not raw packets (cheaper and more accurate)
+- Treat packet and log contents as untrusted data, since attackers can embed instructions in payloads
+- Keep a human in the loop: the agent drafts escalation emails and block recommendations, and a person confirms before anything is sent or changed
+
+### 4. Retrain on a Modern Flow Dataset
+
+- The current model is trained on KDD Cup 99 (1998 traffic). Only about half of its 41 features (duration, protocol, service, flags, byte counts, connection-window statistics) can be computed from live packet headers; content features such as `num_failed_logins` or `root_shell` need payload inspection and are unavailable for encrypted traffic
+- Retrain on a flow-based dataset such as CIC-IDS2017 or UNSW-NB15, whose features match NFStream / CICFlowMeter output, so live traffic and training data line up
+- Keep the KDD model for the existing dataset view
+
 ## License
 
 This project is for educational and research purposes.
