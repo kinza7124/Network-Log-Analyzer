@@ -9,6 +9,7 @@ A comprehensive Network Security Operations Center (SOC) dashboard that combines
 - 💬 **ChatOps Integration**: AI-powered chatbot for security analysis
 - 📧 **Email Escalation**: Automated email alerts to network administrators
 - 🔴 **Live Alert Feed**: Real-time monitoring and alerting system
+- 🌓 **Dark, Light & Auto Themes**: Clean, consistent UI with a theme switcher in the sidebar
 
 ## Prerequisites
 
@@ -61,8 +62,35 @@ The dashboard will open in your browser at `http://localhost:8501`
 
 1. **📊 Dashboard**: Visual analytics and statistics
 2. **🔴 Live Alerts**: Real-time attack detection and alerts
-3. **💬 ChatOps**: AI assistant for security queries
-4. **⚙️ Settings**: System configuration and status
+3. **🧪 Test Data**: Upload a CSV, enter traffic manually, or simulate traffic to test the model
+4. **💬 ChatOps**: AI assistant for security queries
+5. **⚙️ Settings**: System configuration and status
+
+### Themes & UI
+
+Pick a theme from the **Theme** selector at the top of the sidebar:
+
+| Option | Behaviour |
+|--------|-----------|
+| 🌙 **Dark Mode** | Dark palette with a blue accent (default) |
+| ☀️ **Light Mode** | Light palette with a blue accent |
+| 🌓 **Auto** | Follows your operating system / browser light or dark setting |
+
+The whole interface follows the selected theme: Streamlit widgets (inputs, dropdowns, tables, tabs, buttons), the custom cards, and all Plotly charts.
+
+**UI overview:**
+- **Header card** with the dashboard title and a blue accent bar
+- **Metric cards** of equal height with uppercase labels for alert counts and dataset statistics
+- **Underline tabs** for switching between sections
+- **Filled blue buttons** for the main actions (Analyze, Send) and outlined buttons for secondary actions
+- **Chart cards**: every chart sits on a bordered card and uses colours suited to the active theme
+- **Severity strip** at the top of each alert (red = critical, orange = high, yellow = medium, blue = low)
+- **Chat bubbles** in ChatOps that tell your messages apart from the assistant's
+- **Status colours**: green for enabled/active, red for disabled/paused (email alerts, monitoring status)
+
+**Customising the look:** all colours are defined once in `THEME_TOKENS` near the top of `network_security_dashboard.py`, with a `dark` and a `light` palette. They drive both Streamlit's native theme and the custom CSS in `BASE_CSS`, so you can change one value (for example `primary`) and it updates everywhere.
+
+> **Note:** The theme is applied through Streamlit's server-wide config, so it suits a dashboard run by one person locally. If several people open the same running instance and choose different themes, the native widgets follow whoever switched last. Auto mode needs Streamlit 1.46 or newer; the dashboard was tested with Streamlit 1.57.
 
 ### Real-time Monitoring
 
@@ -177,6 +205,19 @@ This generates:
 - The dashboard automatically removes HTML tags from ChatOps responses
 - All responses are displayed as clean markdown text
 - If HTML appears, it's automatically stripped before display
+
+### Charts Show `KeyError: 'Anomaly'`
+- Your Plotly version is too old for pandas 3.x (Plotly 5.x charts that group by a column crash)
+- Upgrade: `pip install -r requirements.txt` (requires `plotly>=6.0.0`)
+
+### Chatbot Warning: `'charmap' codec can't encode character`
+- Caused by the Windows console being unable to print emoji in log messages
+- Fixed in the dashboard, which now switches console output to UTF-8; pull the latest code if you still see it
+
+### Theme Looks Wrong or Mixed
+- Switch the theme once in the sidebar so Streamlit re-applies it, or refresh the page
+- In **Auto** mode the theme follows your OS setting; change it there to switch between light and dark
+- Make sure Streamlit is up to date: `pip install -U streamlit`
 
 ### Dashboard Not Loading
 - Ensure all dependencies are installed: `pip install -r requirements.txt`
