@@ -19,6 +19,13 @@ import threading
 import random
 import re
 import html
+import sys
+# Windows consoles default to cp1252, which can't print the emoji used in log messages
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 # Load environment variables - try .env first, then env_template.txt as fallback
 if not load_dotenv():
     # If .env doesn't exist, try loading from env_template.txt
@@ -56,9 +63,42 @@ new_theme_label = st.sidebar.radio("Theme", list(theme_options.keys()),
                                    key="theme_selector",
                                    help="Switch between dark and light themes")
 
+def resolve_theme(theme):
+    """Map the selected option to the theme actually shown ('dark' or 'light')."""
+    if theme == 'auto':
+        try:
+            detected = st.context.theme.type
+        except Exception:
+            detected = None
+        return detected if detected in ('dark', 'light') else 'dark'
+    return theme
+
+def sync_streamlit_base_theme(theme):
+    """Keep Streamlit's native theme (tables, dropdowns, menus) in sync with our CSS.
+    'auto' clears the override so Streamlit follows the browser/system preference."""
+    base = None if theme == 'auto' else theme
+    primary = {'dark': '#00ff9d', 'light': '#0066cc'}.get(base)
+    try:
+        if (st._config.get_option("theme.base") != base
+                or st._config.get_option("theme.primaryColor") != primary):
+            st._config.set_option("theme.base", base)
+            st._config.set_option("theme.primaryColor", primary)
+            return True
+    except Exception:
+        pass
+    return False
+
 if theme_options[new_theme_label] != st.session_state.theme:
     st.session_state.theme = theme_options[new_theme_label]
+    sync_streamlit_base_theme(st.session_state.theme)
     st.rerun()
+
+# Native theme takes effect on the next run, so rerun once if it was out of sync
+if sync_streamlit_base_theme(st.session_state.theme):
+    st.rerun()
+
+# Effective theme used by CSS, charts and inline HTML
+ui_theme = resolve_theme(st.session_state.theme)
 
 st.sidebar.markdown("---")
 # ==========================================
@@ -68,13 +108,19 @@ st.sidebar.markdown("---")
 def get_theme_css(theme):
     """Return CSS based on selected theme"""
     
+    if theme == 'auto':
+        # Follow the OS setting directly, like Streamlit's own theme does, so the styles
+        # match immediately (st.context.theme only catches up on the next rerun)
+        return (get_theme_css('light').strip().replace('<style>', '<style media="(prefers-color-scheme: light)">', 1)
+                + "\n"
+                + get_theme_css('dark').strip().replace('<style>', '<style media="(prefers-color-scheme: dark)">', 1))
     if theme == 'light':
         return """
         <style>
             /* GLOBAL LIGHT THEME VARIABLES - HIGH CONTRAST */
             :root {
-                --primary-color: #8BCBFC;        /* Deeper blue */
-                --primary-hover: #8BCBFC;
+                --primary-color: #0066cc;        /* Deeper blue */
+                --primary-hover: #0052a3;
                 --background-color: #ffffff;     /* White */
                 --secondary-bg: #f8f9fa;         /* Light Gray Cards */
                 --card-border: #d1d5db;          /* Medium Gray Border */
@@ -99,7 +145,7 @@ def get_theme_css(theme):
 
             /* Main App Background */
             .stApp {
-                background-color: var(--background-color);
+                background-color: var(--background-color) !important;
                 color: var(--text-primary);
                 font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
                 line-height: 1.6;
@@ -299,6 +345,25 @@ def get_theme_css(theme):
                 background: linear-gradient(135deg, rgba(234, 88, 12, 0.1) 0%, rgba(234, 88, 12, 0.05) 100%);
             }
 
+            .medium { border-left-color: var(--sev-medium); }
+            .low { border-left-color: var(--sev-low); }
+
+            /* Chat messages */
+            .user-msg, .bot-msg {
+                padding: 12px 16px;
+                border-radius: 10px;
+                margin: 8px 0;
+                border: 1px solid var(--card-border);
+            }
+            .user-msg { background: rgba(0, 102, 204, 0.08); border-left: 4px solid var(--primary-color); }
+            .bot-msg { background: var(--secondary-bg); border-left: 4px solid var(--sev-normal); }
+
+            /* Top header bar */
+            header[data-testid="stHeader"] {
+                background: var(--background-color);
+                border-bottom: 1px solid var(--card-border);
+            }
+
             /* Input Fields - Light Mode */
             .stTextInput > div > div > input, 
             .stNumberInput > div > div > input,
@@ -369,8 +434,19 @@ def get_theme_css(theme):
             }
 
             /* Ensure all text is visible */
-            .stApp *:not([data-testid="stMetricValue"]):not(.stTabs [aria-selected="true"]):not(.stButton > button) {
+            .stApp *:not(:is([data-testid="stMetricValue"], [data-testid="stMetricValue"] *,
+                             .stTabs [aria-selected="true"], .stTabs [aria-selected="true"] *,
+                             .stButton > button, .stButton > button *)) {
                 color: var(--text-primary) !important;
+            }
+
+            /* ...but keep accent colours on text nested inside those elements */
+            .stApp [data-testid="stMetricValue"] * {
+                color: var(--primary-color) !important;
+            }
+            .stApp .stTabs [aria-selected="true"] *,
+            .stApp .stButton > button * {
+                color: white !important;
             }
         </style>
         """
@@ -495,7 +571,7 @@ header[data-testid="stHeader"] {
     border-bottom: 1px solid rgba(34, 197, 94, 0.30);
 }
 header[data-testid="stHeader"] * {
-    color: var(--text-main) !important;
+    color: var(--text-primary) !important;
 }
 
             /* Force all text in app to be white */
@@ -513,12 +589,6 @@ header[data-testid="stHeader"] * {
                 color: var(--text-primary) !important;
             }
 
-            .stApp p,
-            .stApp div,
-            .stApp span ,
-            .stApp *{
-            color: var(#black) !important;
-            }
             /* Exceptions for colored elements */
             [data-testid="stMetricValue"] {
                 color: var(--primary-color) !important;
@@ -645,7 +715,7 @@ header[data-testid="stHeader"] * {
                 background: linear-gradient(135deg, 
                     rgba(0, 184, 148, 0.9) 0%, 
                     rgba(0, 160, 133, 0.9) 100%);
-                color: #00ff9d !important;
+                color: #0a0e17 !important;
                 border: none;
                 border-radius: 8px;
                 font-weight: 700;
@@ -711,43 +781,18 @@ header[data-testid="stHeader"] * {
                 padding: 12px 16px !important;
                 border-bottom: 1px solid var(--card-border) !important;
             }
-/* ========================================== */
-/* FILE UPLOADER - BLACK TEXT */
-/* ========================================== */
-.stFileUploader {
-    border: 2px dashed #666666 !important;
-    border-radius: 10px !important;
-    background: #f8f9fa !important;
-}
+            /* ========================================== */
+            /* FILE UPLOADER */
+            /* ========================================== */
+            .stFileUploader section {
+                border: 2px dashed var(--input-border) !important;
+                border-radius: 10px !important;
+                background: var(--card-bg) !important;
+            }
 
-.stFileUploader label,
-.stFileUploader p,
-.stFileUploader div,
-.stFileUploader span,
-.stFileUploader * {
-    color: #000000 !important;
-}
-
-/* Hover state for drag and drop */
-.stFileUploader:hover {
-    border-color: var(--primary-color) !important;
-    background: #e9ecef !important;
-}
-
-/* File names and status text */
-.stFileUploader .file-info,
-.stFileUploader .file-name,
-.stFileUploader .file-status {
-    color: #000000 !important;
-    font-weight: 500;
-}
-
-/* "Browse files" button text */
-.stFileUploader button,
-.stFileUploader button span {
-    color: #000000 !important;
-    font-weight: 600;
-}
+            .stFileUploader section:hover {
+                border-color: var(--primary-color) !important;
+            }
 
             /* ========================================== */
             /* RADIO BUTTONS */
@@ -785,6 +830,20 @@ header[data-testid="stHeader"] * {
                     rgba(255, 71, 87, 0.25) 0%, 
                     rgba(255, 71, 87, 0.1) 100%);
             }
+
+            .high { border-left-color: var(--sev-high); }
+            .medium { border-left-color: var(--sev-medium); }
+            .low { border-left-color: var(--sev-low); }
+
+            /* Chat messages */
+            .user-msg, .bot-msg {
+                padding: 12px 16px;
+                border-radius: 10px;
+                margin: 8px 0;
+                border: 1px solid var(--card-border);
+            }
+            .user-msg { background: rgba(0, 204, 255, 0.08); border-left: 4px solid #00ccff; }
+            .bot-msg { background: var(--card-bg); border-left: 4px solid var(--primary-color); }
             
             /* ========================================== */
             /* EXPANDER - BASE STYLING */
@@ -1056,7 +1115,8 @@ header[data-testid="stHeader"] * {
         """
 
 # Apply the selected theme CSS
-st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)# Initialize session state
+st.markdown(get_theme_css(st.session_state.theme if st.session_state.theme == 'auto' else ui_theme), unsafe_allow_html=True)
+# Initialize session state
 if 'monitoring_active' not in st.session_state:
     st.session_state.monitoring_active = False
 if 'alert_count' not in st.session_state:
@@ -2015,10 +2075,10 @@ with tab1:
                     
                     if len(severity_counts) > 0:
                         # Set Plotly template based on theme
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                         
                         # Create color list based on theme
-                        if st.session_state.theme == 'dark':
+                        if ui_theme == 'dark':
                             color_map = {
                                 'CRITICAL': '#ff4757',
                                 'HIGH': '#ffa502',
@@ -2045,12 +2105,12 @@ with tab1:
                         fig_pie.update_traces(
                             textposition='inside', 
                             textinfo='percent+label',
-                            marker=dict(colors=colors, line=dict(color='#0e1117' if st.session_state.theme == 'dark' else '#ffffff', width=2))
+                            marker=dict(colors=colors, line=dict(color='#0e1117' if ui_theme == 'dark' else '#ffffff', width=2))
                         )
                         fig_pie.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_pie, use_container_width=True)
                         st.caption(f"Breakdown: {', '.join([f'{k}: {v:,}' for k, v in severity_counts.items()])}")
@@ -2072,8 +2132,8 @@ with tab1:
                         'Anomaly': len(df_anomalies)
                     })
                     
-                    plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                    colors = ['#00ff9d', '#ff4757'] if st.session_state.theme == 'dark' else ['#198754', '#dc3545']
+                    plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                    colors = ['#00ff9d', '#ff4757'] if ui_theme == 'dark' else ['#198754', '#dc3545']
                     
                     fig_normal = px.pie(
                         values=normal_anomaly_counts.values,
@@ -2089,7 +2149,7 @@ with tab1:
                     fig_normal.update_layout(
                         paper_bgcolor='rgba(0,0,0,0)', 
                         plot_bgcolor='rgba(0,0,0,0)',
-                        font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                        font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                     )
                     st.plotly_chart(fig_normal, use_container_width=True)
                     with st.expander("Interpretation: Normal vs Anomaly"):
@@ -2112,8 +2172,8 @@ with tab1:
                         df_anomalies['hour'] = df_anomalies['timestamp'].dt.floor('h')
                         timeline = df_anomalies.groupby('hour').size().reset_index(name='count')
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                        line_color = '#ff4757' if st.session_state.theme == 'dark' else '#dc3545'
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                        line_color = '#ff4757' if ui_theme == 'dark' else '#dc3545'
                         
                         fig_timeline = px.line(
                             timeline,
@@ -2128,14 +2188,14 @@ with tab1:
                         fig_timeline.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_timeline, use_container_width=True)
                     
                     with time_col2:
                         # Anomaly score distribution
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                        bar_color = '#00ff9d' if st.session_state.theme == 'dark' else '#198754'
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                        bar_color = '#00ff9d' if ui_theme == 'dark' else '#198754'
                         
                         fig_hist = px.histogram(
                             df_anomalies,
@@ -2149,7 +2209,7 @@ with tab1:
                         fig_hist.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_hist, use_container_width=True)
                 
@@ -2161,8 +2221,8 @@ with tab1:
                     if 'protocol_type' in df_anomalies.columns:
                         protocol_counts = df_anomalies['protocol_type'].value_counts()
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                        bar_color = '#0fbcf9' if st.session_state.theme == 'dark' else '#0dcaf0'
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                        bar_color = '#0fbcf9' if ui_theme == 'dark' else '#0dcaf0'
                         
                         fig_protocol = px.bar(
                             x=protocol_counts.index,
@@ -2175,7 +2235,7 @@ with tab1:
                         fig_protocol.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_protocol, use_container_width=True)
                 
@@ -2183,8 +2243,8 @@ with tab1:
                     if 'service' in df_anomalies.columns:
                         service_counts = df_anomalies['service'].value_counts().head(10)
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                        bar_color = '#ff4757' if st.session_state.theme == 'dark' else '#fd7e14'
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                        bar_color = '#ff4757' if ui_theme == 'dark' else '#fd7e14'
                         
                         fig_service = px.bar(
                             x=service_counts.index,
@@ -2197,7 +2257,7 @@ with tab1:
                         fig_service.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_service, use_container_width=True)
                 
@@ -2209,9 +2269,9 @@ with tab1:
                     # Data Transfer Analysis
                     if 'src_bytes' in df_anomalies.columns and 'dst_bytes' in df_anomalies.columns:
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                         
-                        if st.session_state.theme == 'dark':
+                        if ui_theme == 'dark':
                             color_map = {
                                 'CRITICAL': '#ff4757',
                                 'HIGH': '#ffa502',
@@ -2241,7 +2301,7 @@ with tab1:
                         fig_scatter.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_scatter, use_container_width=True)
                 
@@ -2249,9 +2309,9 @@ with tab1:
                     # Connection Pattern Analysis
                     if 'count' in df_anomalies.columns and 'srv_count' in df_anomalies.columns:
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                         
-                        if st.session_state.theme == 'dark':
+                        if ui_theme == 'dark':
                             color_map = {
                                 'CRITICAL': '#ff4757',
                                 'HIGH': '#ffa502',
@@ -2281,7 +2341,7 @@ with tab1:
                         fig_conn.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_conn, use_container_width=True)
                 
@@ -2294,7 +2354,7 @@ with tab1:
                         error_df = df_anomalies[['serror_rate', 'rerror_rate', 'severity']].head(1000)
                         fig_error = go.Figure()
                         
-                        if st.session_state.theme == 'dark':
+                        if ui_theme == 'dark':
                             severity_colors = {
                                 'CRITICAL': '#ff4757',
                                 'HIGH': '#ffa502',
@@ -2329,10 +2389,10 @@ with tab1:
                             xaxis_title="SYN Error Rate",
                             yaxis_title="REJ Error Rate",
                             hovermode='closest',
-                            template="plotly_dark" if st.session_state.theme == 'dark' else "plotly_white",
+                            template="plotly_dark" if ui_theme == 'dark' else "plotly_white",
                             paper_bgcolor='rgba(0,0,0,0)',
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_error, use_container_width=True)
                 
@@ -2341,7 +2401,7 @@ with tab1:
                     if 'flag' in df_anomalies.columns:
                         flag_counts = df_anomalies['flag'].value_counts()
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                         
                         fig_flag = px.bar(
                             x=flag_counts.index,
@@ -2355,7 +2415,7 @@ with tab1:
                         fig_flag.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_flag, use_container_width=True)
                 st.subheader("3D PCA Attack Space (Dataset EDA)")
@@ -2399,7 +2459,7 @@ with tab1:
                     pca_df['anomaly_score'] = pca_source.get('anomaly_score', 0.0).values
 
                     # Theme-aware colors
-                    if st.session_state.theme == 'dark':
+                    if ui_theme == 'dark':
                         color_discrete_map = {
                             'Normal': '#00ff9d',
                             'Anomaly': '#ff4757'
@@ -2460,7 +2520,7 @@ with tab1:
                     st.subheader("Service-Protocol Correlation")
                     heatmap_data = pd.crosstab(df_anomalies['service'], df_anomalies['protocol_type'])
                     
-                    plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                    plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                     
                     fig_heatmap = px.imshow(
                         heatmap_data,
@@ -2473,7 +2533,7 @@ with tab1:
                     fig_heatmap.update_layout(
                         paper_bgcolor='rgba(0,0,0,0)', 
                         plot_bgcolor='rgba(0,0,0,0)',
-                        font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                        font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                     )
                     st.plotly_chart(fig_heatmap, use_container_width=True)
             else:
@@ -2542,9 +2602,9 @@ with tab1:
                     severity_counts = severity_counts[severity_counts > 0]
                     
                     if len(severity_counts) > 0:
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                         
-                        if st.session_state.theme == 'dark':
+                        if ui_theme == 'dark':
                             color_map = {
                                 'CRITICAL': '#ff4757',
                                 'HIGH': '#ffa502',
@@ -2571,12 +2631,12 @@ with tab1:
                         fig_pie.update_traces(
                             textposition='inside', 
                             textinfo='percent+label',
-                            marker=dict(colors=colors, line=dict(color='#0e1117' if st.session_state.theme == 'dark' else '#ffffff', width=2))
+                            marker=dict(colors=colors, line=dict(color='#0e1117' if ui_theme == 'dark' else '#ffffff', width=2))
                         )
                         fig_pie.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_pie, use_container_width=True)
                         
@@ -2600,8 +2660,8 @@ with tab1:
                     df_alerts['minute'] = df_alerts['timestamp'].dt.floor('1min')
                     timeline = df_alerts.groupby('minute').size().reset_index(name='count')
                     
-                    plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                    line_color = '#00ff9d' if st.session_state.theme == 'dark' else '#0066cc'
+                    plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                    line_color = '#00ff9d' if ui_theme == 'dark' else '#0066cc'
                     
                     fig_timeline = px.line(
                         timeline,
@@ -2615,7 +2675,7 @@ with tab1:
                     fig_timeline.update_layout(
                         paper_bgcolor='rgba(0,0,0,0)', 
                         plot_bgcolor='rgba(0,0,0,0)',
-                        font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                        font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                     )
                     st.plotly_chart(fig_timeline, use_container_width=True)
                     with st.expander("Interpretation: Attack Timeline"):
@@ -2634,8 +2694,8 @@ with tab1:
                 # Attack score distribution
                 st.subheader("Attack Score Distribution")
                 
-                plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                bar_color = '#ff4757' if st.session_state.theme == 'dark' else '#dc3545'
+                plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                bar_color = '#ff4757' if ui_theme == 'dark' else '#dc3545'
                 
                 fig_hist = px.histogram(
                     df_alerts,
@@ -2649,7 +2709,7 @@ with tab1:
                 fig_hist.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)', 
                     plot_bgcolor='rgba(0,0,0,0)',
-                    font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                    font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                 )
                 st.plotly_chart(fig_hist, use_container_width=True)
                 with st.expander("Interpretation: Attack Score Distribution"):
@@ -2675,8 +2735,8 @@ with tab1:
                         protocols = df_alerts['data'].apply(lambda x: x.get('protocol_type', 'N/A') if isinstance(x, dict) else 'N/A')
                         protocol_counts = protocols.value_counts()
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                        bar_color = '#0fbcf9' if st.session_state.theme == 'dark' else '#0dcaf0'
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                        bar_color = '#0fbcf9' if ui_theme == 'dark' else '#0dcaf0'
                         
                         fig_protocol = px.bar(
                             x=protocol_counts.index,
@@ -2689,7 +2749,7 @@ with tab1:
                         fig_protocol.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_protocol, use_container_width=True)
                         with st.expander("Interpretation: Attacks by Protocol"):
@@ -2711,8 +2771,8 @@ with tab1:
                         services = df_alerts['data'].apply(lambda x: x.get('service', 'N/A') if isinstance(x, dict) else 'N/A')
                         service_counts = services.value_counts().head(10)
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
-                        bar_color = '#ffa502' if st.session_state.theme == 'dark' else '#fd7e14'
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
+                        bar_color = '#ffa502' if ui_theme == 'dark' else '#fd7e14'
                         
                         fig_service = px.bar(
                             x=service_counts.index,
@@ -2725,7 +2785,7 @@ with tab1:
                         fig_service.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_service, use_container_width=True)
                         with st.expander("Interpretation: Top Attacked Services"):
@@ -2769,9 +2829,9 @@ with tab1:
                         if data_list:
                             transfer_df = pd.DataFrame(data_list)
                             
-                            plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                            plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                             
-                            if st.session_state.theme == 'dark':
+                            if ui_theme == 'dark':
                                 color_map = {
                                     'CRITICAL': '#ff4757',
                                     'HIGH': '#ffa502',
@@ -2801,7 +2861,7 @@ with tab1:
                             fig_scatter.update_layout(
                                 paper_bgcolor='rgba(0,0,0,0)', 
                                 plot_bgcolor='rgba(0,0,0,0)',
-                                font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                                font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                             )
                             st.plotly_chart(fig_scatter, use_container_width=True)
                             with st.expander("Interpretation: Data Transfer Patterns"):
@@ -2840,9 +2900,9 @@ with tab1:
                         if conn_list:
                             conn_df = pd.DataFrame(conn_list)
                             
-                            plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                            plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                             
-                            if st.session_state.theme == 'dark':
+                            if ui_theme == 'dark':
                                 color_map = {
                                     'CRITICAL': '#ff4757',
                                     'HIGH': '#ffa502',
@@ -2872,7 +2932,7 @@ with tab1:
                             fig_conn.update_layout(
                                 paper_bgcolor='rgba(0,0,0,0)', 
                                 plot_bgcolor='rgba(0,0,0,0)',
-                                font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                                font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                             )
                             st.plotly_chart(fig_conn, use_container_width=True)
                             with st.expander("Interpretation: Connection Patterns"):
@@ -2901,7 +2961,7 @@ with tab1:
                     if flag_list:
                         flag_counts = pd.Series(flag_list).value_counts()
                         
-                        plotly_template = "plotly_dark" if st.session_state.theme == 'dark' else "plotly_white"
+                        plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
                         
                         fig_flag = px.bar(
                             x=flag_counts.index,
@@ -2915,7 +2975,7 @@ with tab1:
                         fig_flag.update_layout(
                             paper_bgcolor='rgba(0,0,0,0)', 
                             plot_bgcolor='rgba(0,0,0,0)',
-                            font_color='#f0f4f8' if st.session_state.theme == 'dark' else '#212529'
+                            font_color='#f0f4f8' if ui_theme == 'dark' else '#212529'
                         )
                         st.plotly_chart(fig_flag, use_container_width=True)
                         with st.expander("Interpretation: Flag Distribution"):
@@ -3387,9 +3447,9 @@ with tab5:
     
     st.markdown("### Email Configuration")
     email_status = "Enabled" if EMAIL_CONFIG['enabled'] else "Disabled"
-    status_color = "#00b771" if (EMAIL_CONFIG['enabled'] and st.session_state.theme == 'dark') else "#0066cc" if (EMAIL_CONFIG['enabled'] and st.session_state.theme == 'light') else "#ff2b2b" if st.session_state.theme == 'dark' else "#dc3545"
-    email_bg = "#ffffff" if st.session_state.theme == "light" else "#1A1C24"
-    email_text_color = "#111827" if st.session_state.theme == "light" else "#e6e6e6"
+    status_color = "#00b771" if (EMAIL_CONFIG['enabled'] and ui_theme == 'dark') else "#0066cc" if (EMAIL_CONFIG['enabled'] and ui_theme == 'light') else "#ff2b2b" if ui_theme == 'dark' else "#dc3545"
+    email_bg = "#ffffff" if ui_theme == 'light' else "#1A1C24"
+    email_text_color = "#111827" if ui_theme == 'light' else "#e6e6e6"
 
     st.markdown(f"""
     <div style="background-color: {email_bg}; padding: 15px; border-radius: 8px;
@@ -3458,7 +3518,7 @@ footer_col1, footer_col2, footer_col3 = st.columns(3)
 
 
 with footer_col1:
-    if st.session_state.theme == 'dark':
+    if ui_theme == 'dark':
         status_color = "#00ff9d" if st.session_state.monitoring_active else "#ff2b2b"
     else:
         status_color = "#0066cc" if st.session_state.monitoring_active else "#dc3545"
