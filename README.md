@@ -1,4 +1,12 @@
-# Network Security SOC Dashboard
+<p align="center">
+  <img src="assets/logo.svg" alt="Network Log Analyzer logo" width="120">
+</p>
+
+<h1 align="center">Network Security SOC Dashboard</h1>
+
+<p align="center">
+  Real-time network attack detection, visual analytics, ChatOps and automated email escalation
+</p>
 
 A comprehensive Network Security Operations Center (SOC) dashboard that combines real-time attack detection, visualizations, ChatOps, and automated email escalation.
 
@@ -72,9 +80,9 @@ Pick a theme from the **Theme** selector at the top of the sidebar:
 
 | Option | Behaviour |
 |--------|-----------|
-| 🌙 **Dark Mode** | Dark palette with a blue accent (default) |
-| ☀️ **Light Mode** | Light palette with a blue accent |
-| 🌓 **Auto** | Follows your operating system / browser light or dark setting |
+| **Dark Mode** | Dark palette with a blue accent (default) |
+| **Light Mode** | Light palette with a blue accent |
+| **Auto** | Follows your operating system / browser light or dark setting |
 
 The whole interface follows the selected theme: Streamlit widgets (inputs, dropdowns, tables, tabs, buttons), the custom cards, and all Plotly charts.
 
@@ -87,6 +95,17 @@ The whole interface follows the selected theme: Streamlit widgets (inputs, dropd
 - **Severity strip** at the top of each alert (red = critical, orange = high, yellow = medium, blue = low)
 - **Chat bubbles** in ChatOps that tell your messages apart from the assistant's
 - **Status colours**: green for enabled/active, red for disabled/paused (email alerts, monitoring status)
+
+**Logo:** the app's logo shows what the project does:
+
+| Element | Meaning |
+|---------|---------|
+| 🛡️ Shield | Network security, the SOC's job |
+| Horizontal lines | Network log entries, the data the app analyzes |
+| Pulse waveform | Live traffic being analyzed in real time |
+| Red point on the spike | An anomaly flagged by the GHF-ART model |
+
+It appears as the browser tab icon, in the sidebar (as a full wordmark that collapses to the shield icon) and in the dashboard header. Logo files live in `assets/`: `logo.svg` is the icon, and `logo-wordmark-light.svg` / `logo-wordmark-dark.svg` are the wordmarks for light and dark backgrounds.
 
 **Customising the look:** all colours are defined once in `THEME_TOKENS` near the top of `network_security_dashboard.py`, with a `dark` and a `light` palette. They drive both Streamlit's native theme and the custom CSS in `BASE_CSS`, so you can change one value (for example `primary`) and it updates everywhere.
 
@@ -141,6 +160,7 @@ The ChatOps tab includes quick action buttons for common queries:
 
 ```
 CN_Proj/
+├── assets/                        # Logo files (icon + light/dark wordmarks)
 ├── network_security_dashboard.py  # Main unified dashboard
 ├── train_model.py                  # Model training script
 ├── requirements.txt                # Python dependencies

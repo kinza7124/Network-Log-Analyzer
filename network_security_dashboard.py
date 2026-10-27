@@ -20,6 +20,7 @@ import random
 import re
 import html
 import sys
+import base64
 # Windows consoles default to cp1252, which can't print the emoji used in log messages
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -34,11 +35,14 @@ if not load_dotenv():
 # Import model classes
 from train_model import GHF_ART_Optimized
 from claude_chatbot import ClaudeSecurityChatbot
+# Brand assets
+ASSETS_DIR = Path(__file__).parent / "assets"
+LOGO_ICON = ASSETS_DIR / "logo.svg"
 # Page config
 st.set_page_config(
     page_title="Network Security SOC Dashboard",
     layout="wide",
-    page_icon="🔒",
+    page_icon=str(LOGO_ICON) if LOGO_ICON.exists() else "🔒",
     initial_sidebar_state="expanded"
 )
 # ==========================================
@@ -48,13 +52,13 @@ st.set_page_config(
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'  # Default to dark mode
 # Theme toggle in sidebar
-st.sidebar.title("🔧 Control Panel")
+st.sidebar.title("Control Panel")
 st.sidebar.markdown("---")
 # Theme selector at the top of sidebar
 theme_options = {
-    "🌙 Dark Mode": "dark",
-    "☀️ Light Mode": "light",
-    "🌓 Auto": "auto"
+    "Dark Mode": "dark",
+    "Light Mode": "light",
+    "Auto": "auto"
 }
 
 current_theme_label = [k for k, v in theme_options.items() if v == st.session_state.theme][0]
@@ -142,6 +146,11 @@ if sync_streamlit_base_theme(st.session_state.theme):
 # Effective theme used by CSS, charts and inline HTML
 ui_theme = resolve_theme(st.session_state.theme)
 
+# Sidebar logo: wordmark when expanded, shield icon when collapsed
+wordmark = ASSETS_DIR / f"logo-wordmark-{ui_theme}.svg"
+if wordmark.exists() and LOGO_ICON.exists():
+    st.logo(str(wordmark), icon_image=str(LOGO_ICON), size="large")
+
 st.sidebar.markdown("---")
 # ==========================================
 # DYNAMIC CSS BASED ON SELECTED THEME
@@ -185,6 +194,14 @@ hr { border-color: var(--border) !important; }
     padding: 1.4rem 1.75rem;
     margin-bottom: 1.5rem;
     box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+}
+.header-logo {
+    width: 56px;
+    height: 56px;
+    flex-shrink: 0;
 }
 .main-header-container .main-header {
     color: var(--text);
@@ -1081,11 +1098,17 @@ def simulate_traffic(traffic_type='random'):
 
 
 # Main Dashboard
-# Main Dashboard
-st.markdown("""
+header_logo = ""
+if LOGO_ICON.exists():
+    logo_uri = "data:image/svg+xml;base64," + base64.b64encode(LOGO_ICON.read_bytes()).decode()
+    header_logo = f'<img class="header-logo" src="{logo_uri}" alt="">'
+st.markdown(f"""
 <div class="main-header-container">
-    <h1 class="main-header">Network Security SOC Dashboard</h1>
-    <div class="header-subtitle">Unified Network Security Dashboard • Real-time Monitoring • AI-Powered Threat Detection</div>
+    {header_logo}
+    <div>
+        <h1 class="main-header">Network Security SOC Dashboard</h1>
+        <div class="header-subtitle">Unified Network Security Dashboard • Real-time Monitoring • AI-Powered Threat Detection</div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1099,7 +1122,7 @@ if monitoring_status != st.session_state.monitoring_active:
     if monitoring_status:
         st.sidebar.success("Monitoring started")
     else:
-        st.sidebar.info("⏸️ Monitoring paused")
+        st.sidebar.info("Monitoring paused")
 
 
 

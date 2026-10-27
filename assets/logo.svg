@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Network Log Analyzer logo">
+  <title>Network Log Analyzer</title>
+  <!-- Shield = security. Log lines = network logs. Pulse = live traffic analysis.
+       Red point on the spike = the anomaly the model detects. -->
+  <defs>
+    <linearGradient id="nla-shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 3 55 11V29.5C55 44.2 45.3 55.2 32 61 18.7 55.2 9 44.2 9 29.5V11Z" fill="url(#nla-shield)"/>
+  <path d="M32 7.2 51 13.8V29.5C51 41.6 43.2 50.9 32 56.4 20.8 50.9 13 41.6 13 29.5V13.8Z" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="1.2"/>
+  <!-- Log entries -->
+  <g stroke="#ffffff" stroke-linecap="round" stroke-width="3" opacity="0.42">
+    <path d="M20 19.5H44"/>
+    <path d="M20 44.5H36"/>
+  </g>
+  <!-- Traffic pulse with a detected spike -->
+  <path d="M17 32H24.5L28 26 32.5 39.5 37 21.5 40.5 32H47" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="37" cy="21.5" r="3.6" fill="#f87171" stroke="#ffffff" stroke-width="1.8"/>
+</svg>
