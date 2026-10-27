@@ -295,6 +295,41 @@ Planned extensions: live packet capture (PCAP) analysis, and turning ChatOps int
 - Retrain on a flow-based dataset such as CIC-IDS2017 or UNSW-NB15, whose features match NFStream / CICFlowMeter output, so live traffic and training data line up
 - Keep the KDD model for the existing dataset view
 
+## Research Directions
+
+The Next Steps above build the system; these are research questions it can be used to answer.
+
+### 1. Online Intrusion Detection with an Incremental Model
+
+GHF-ART is an Adaptive Resonance Theory model: it can learn from new data without retraining from scratch and without forgetting what it already learned, whereas most intrusion detection models are trained once and then frozen.
+
+- **Question:** Does incremental ART keep detecting well on live traffic as it changes over time, compared with retraining batch models?
+- **Measure:** F1 and false-positive rate over time, detection delay, throughput (flows per second)
+
+### 2. LLM Agent for SOC Alert Triage
+
+- **Question:** Does a tool-using agent give more accurate triage answers than a plain chatbot or the current rule-based assistant?
+- **Measure:** Factual accuracy against ground truth, hallucination rate, time to triage
+- **Extension:** Robustness to prompt injection hidden in packet payloads
+
+### 3. Cross-Dataset Generalization
+
+- **Question:** Does a model trained on CIC-IDS2017 still work on UNSW-NB15 or on locally captured traffic?
+- A careful negative result is still valuable, since many published intrusion detection results do not hold across datasets
+
+### Evaluation Checklist
+
+- **Baselines:** Isolation Forest, autoencoder, supervised Random Forest, Kitsune (online network intrusion detector)
+- **Metrics:** Precision, recall, F1, false-positive rate, PR-AUC; latency and throughput for the live system
+- **Splits:** Time-based train/test splits, so the model never trains on traffic from after the traffic it is tested on
+- **Ablations:** Remove one component at a time (e.g. the agent with and without tools) to show what each part contributes
+- **Reproducibility:** Public datasets for the main results, fixed random seeds, released code
+- **Datasets:** Use modern datasets (CIC-IDS2017, UNSW-NB15) for headline results; KDD Cup 99 is widely criticized in the literature (the reason NSL-KDD was created)
+
+### Before Reporting Results
+
+The dashboard currently flags 96.2% of records as anomalies with an average anomaly score of 1.000, which suggests the scores barely separate normal traffic from attacks. KDD's 10% subset is mostly attacks, so a high rate is expected, but verify the score calculation and threshold before reporting any numbers.
+
 ## License
 
 This project is for educational and research purposes.
