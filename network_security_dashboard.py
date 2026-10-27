@@ -73,20 +73,62 @@ def resolve_theme(theme):
         return detected if detected in ('dark', 'light') else 'dark'
     return theme
 
+# Design tokens shared by Streamlit's native theme and our CSS
+THEME_TOKENS = {
+    'dark': {
+        'bg': '#0b0f17', 'surface': '#121826', 'surface-2': '#1a2233', 'border': '#263043',
+        'text': '#e5e9f0', 'text-2': '#a3adbd', 'muted': '#7b8597',
+        'primary': '#3b82f6', 'primary-soft': 'rgba(59, 130, 246, 0.14)',
+        'shadow': '0 1px 2px rgba(0, 0, 0, 0.4)',
+        'sev-critical': '#f87171', 'sev-high': '#fb923c', 'sev-medium': '#facc15',
+        'sev-low': '#60a5fa', 'sev-normal': '#4ade80',
+    },
+    'light': {
+        'bg': '#f5f7fa', 'surface': '#ffffff', 'surface-2': '#eef1f5', 'border': '#dfe3ea',
+        'text': '#0f172a', 'text-2': '#475569', 'muted': '#64748b',
+        'primary': '#2563eb', 'primary-soft': 'rgba(37, 99, 235, 0.08)',
+        'shadow': '0 1px 2px rgba(15, 23, 42, 0.06)',
+        'sev-critical': '#dc2626', 'sev-high': '#ea580c', 'sev-medium': '#ca8a04',
+        'sev-low': '#2563eb', 'sev-normal': '#16a34a',
+    },
+}
+
+def _native_palette(section, t):
+    """Streamlit theme options for one config section; t=None clears them."""
+    main = {
+        "primaryColor": 'primary', "backgroundColor": 'bg', "secondaryBackgroundColor": 'surface-2',
+        "textColor": 'text', "borderColor": 'border',
+    }
+    options = {f"{section}.{key}": t[token] if t else None for key, token in main.items()}
+    options[f"{section}.showWidgetBorder"] = True if t else None
+    options[f"{section}.baseRadius"] = "0.5rem" if t else None
+    options[f"{section}.sidebar.backgroundColor"] = t['surface'] if t else None
+    options[f"{section}.sidebar.secondaryBackgroundColor"] = t['surface-2'] if t else None
+    return options
+
+def native_theme_options(theme):
+    """Streamlit theme config for a mode. 'auto' supplies both palettes and lets the
+    browser pick one from the system setting."""
+    fixed = THEME_TOKENS.get(theme)
+    auto = theme == 'auto'
+    options = {"theme.base": theme if fixed else None}
+    options.update(_native_palette("theme", fixed))
+    options.update(_native_palette("theme.light", THEME_TOKENS['light'] if auto else None))
+    options.update(_native_palette("theme.dark", THEME_TOKENS['dark'] if auto else None))
+    return options
+
 def sync_streamlit_base_theme(theme):
-    """Keep Streamlit's native theme (tables, dropdowns, menus) in sync with our CSS.
+    """Keep Streamlit's native theme (inputs, tables, dropdowns, tabs) in sync with our CSS.
     'auto' clears the override so Streamlit follows the browser/system preference."""
-    base = None if theme == 'auto' else theme
-    primary = {'dark': '#00ff9d', 'light': '#0066cc'}.get(base)
+    changed = False
     try:
-        if (st._config.get_option("theme.base") != base
-                or st._config.get_option("theme.primaryColor") != primary):
-            st._config.set_option("theme.base", base)
-            st._config.set_option("theme.primaryColor", primary)
-            return True
+        for key, value in native_theme_options(theme).items():
+            if st._config.get_option(key) != value:
+                st._config.set_option(key, value)
+                changed = True
     except Exception:
-        pass
-    return False
+        return False
+    return changed
 
 if theme_options[new_theme_label] != st.session_state.theme:
     st.session_state.theme = theme_options[new_theme_label]
@@ -105,1014 +147,143 @@ st.sidebar.markdown("---")
 # DYNAMIC CSS BASED ON SELECTED THEME
 # ==========================================
 
+def _css_tokens(theme):
+    return "\n".join(f"    --{k}: {v};" for k, v in THEME_TOKENS[theme].items())
+
 def get_theme_css(theme):
-    """Return CSS based on selected theme"""
-    
+    """Return CSS for the selected theme. Colours come from THEME_TOKENS; Streamlit's
+    native theme styles the widgets, so this only covers layout and custom components."""
     if theme == 'auto':
         # Follow the OS setting directly, like Streamlit's own theme does, so the styles
         # match immediately (st.context.theme only catches up on the next rerun)
-        return (get_theme_css('light').strip().replace('<style>', '<style media="(prefers-color-scheme: light)">', 1)
-                + "\n"
-                + get_theme_css('dark').strip().replace('<style>', '<style media="(prefers-color-scheme: dark)">', 1))
-    if theme == 'light':
-        return """
-        <style>
-            /* GLOBAL LIGHT THEME VARIABLES - HIGH CONTRAST */
-            :root {
-                --primary-color: #0066cc;        /* Deeper blue */
-                --primary-hover: #0052a3;
-                --background-color: #ffffff;     /* White */
-                --secondary-bg: #f8f9fa;         /* Light Gray Cards */
-                --card-border: #d1d5db;          /* Medium Gray Border */
-                --text-primary: #111827;         /* Near Black - HIGH CONTRAST */
-                --text-secondary: #374151;       /* Dark Gray */
-                --text-muted: #6b7280;           /* Medium Gray */
-                --accent-glow: rgba(0, 102, 204, 0.15);
-                --sidebar-bg: #f3f4f6;           /* Light Gray */
-                --sidebar-text: #111827;         /* Near Black */
-                
-                /* Severity Colors (Professional for Light Mode) */
-                --sev-critical: #dc2626;         /* Darker Red */
-                --sev-high: #ea580c;             /* Darker Orange */
-                --sev-medium: #ca8a04;           /* Darker Yellow */
-                --sev-low: #0284c7;              /* Darker Blue */
-                --sev-normal: #059669;           /* Darker Green */
-                
-                /* Chart Colors */
-                --chart-grid: #e5e7eb;
-                --chart-text: #374151;
-            }
+        tokens = (f"@media (prefers-color-scheme: light) {{ :root {{\n{_css_tokens('light')}\n}} }}\n"
+                  f"@media (prefers-color-scheme: dark) {{ :root {{\n{_css_tokens('dark')}\n}} }}")
+    else:
+        tokens = f":root {{\n{_css_tokens(theme)}\n}}"
+    # Keep the <style> block free of blank lines so Markdown treats it as one HTML block
+    return "<style>\n" + tokens + "\n" + BASE_CSS.strip() + "\n</style>"
 
-            /* Main App Background */
-            .stApp {
-                background-color: var(--background-color) !important;
-                color: var(--text-primary);
-                font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
-                line-height: 1.6;
-            }
-
-            /* Main Header Styling */
-            .main-header-container {
-                background: linear-gradient(90deg, rgba(0, 102, 204, 0.15) 0%, rgba(0, 102, 204, 0.05) 100%);
-                padding: 2rem;
-                border-radius: 12px;
-                margin-bottom: 2rem;
-                border-left: 6px solid var(--primary-color);
-                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-                text-align: center;
-            }
-            .main-header {
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 3.2rem;
-    font-weight: 800;
-    background: linear-gradient(90deg, #1d4ed8, #38bdf8, #22c55e, #1d4ed8);
-    background-size: 300% 300%;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin: 0;
-    letter-spacing: 0.5px;
-    line-height: 1.2;
-    animation: socLightHeadingGlow 8s ease-in-out infinite;
-}
-
-/* Add this keyframes block in the same light section (below .main-header is fine) */
-@keyframes socLightHeadingGlow {
-    0%   { background-position: 0% 50%; }
-    50%  { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-}
-
-            .header-subtitle {
-                font-size: 1.2rem;
-                color: var(--text-secondary);
-                margin-top: 0.5rem;
-                font-weight: 500;
-            }
-
-            /* Subheaders - HIGH CONTRAST */
-            .stSubheader, .st-emotion-cache-16txtl3 {
-                color: var(--text-primary) !important;
-                font-weight: 700 !important;
-                border-left: 4px solid var(--primary-color);
-                padding-left: 12px;
-                margin-top: 1.5rem !important;
-                background: rgba(0, 102, 204, 0.05);
-                padding: 12px 15px;
-                border-radius: 0 8px 8px 0;
-            }
-
-            /* Metric Cards */
-            div[data-testid="stMetric"] {
-                background-color: var(--secondary-bg);
-                border: 1px solid var(--card-border);
-                border-radius: 10px;
-                padding: 20px 15px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-                transition: all 0.3s ease;
-                min-height: 120px;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-            }
-            
-            div[data-testid="stMetric"]:hover {
-                border-color: var(--primary-color);
-                box-shadow: 0 8px 24px rgba(0, 102, 204, 0.15);
-                transform: translateY(-2px);
-            }
-            
-            [data-testid="stMetricValue"] {
-                font-size: 2.5rem !important;
-                font-weight: 800 !important;
-                color: var(--primary-color) !important;
-                line-height: 1.2;
-            }
-            
-            [data-testid="stMetricLabel"] {
-                color: var(--text-secondary) !important;
-                font-weight: 600 !important;
-                font-size: 1rem !important;
-                margin-top: 5px !important;
-            }
-
-            /* Sidebar Styling */
-            section[data-testid="stSidebar"] {
-                background-color: var(--sidebar-bg) !important;
-                border-right: 1px solid var(--card-border);
-            }
-            
-            section[data-testid="stSidebar"] *,
-            section[data-testid="stSidebar"] .st-emotion-cache-16txtl3,
-            section[data-testid="stSidebar"] h1,
-            section[data-testid="stSidebar"] h2,
-            section[data-testid="stSidebar"] h3,
-            section[data-testid="stSidebar"] h4,
-            section[data-testid="stSidebar"] h5,
-            section[data-testid="stSidebar"] h6,
-            section[data-testid="stSidebar"] p,
-            section[data-testid="stSidebar"] span,
-            section[data-testid="stSidebar"] div,
-            section[data-testid="stSidebar"] label {
-                color: var(--sidebar-text) !important;
-                font-weight: 500;
-            }
-
-            /* MAIN CONTENT RADIO BUTTONS - LIGHT MODE */
-            .stRadio > div > label,
-            .stCheckbox > label {
-                color: var(--text-primary) !important;
-                font-weight: 500;
-            }
-            
-            .stRadio [role="radiogroup"] label {
-                color: var(--text-primary) !important;
-                font-weight: 500 !important;
-            }
-            
-            /* Selected radio button */
-            .stRadio [role="radiogroup"] [data-testid="stRadio"] > div:has(input:checked) label {
-                color: var(--primary-color) !important;
-                font-weight: 600 !important;
-            }
-
-            /* Buttons */
-            .stButton > button {
-                background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-                color: white !important;
-                border: none;
-                border-radius: 8px;
-                font-weight: 600;
-                padding: 10px 24px;
-                transition: all 0.3s ease;
-                box-shadow: 0 4px 12px rgba(0, 102, 204, 0.2);
-            }
-            
-            .stButton > button:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 24px rgba(0, 102, 204, 0.3);
-            }
-
-            /* Tabs */
-            .stTabs [data-baseweb="tab-list"] {
-                background-color: var(--secondary-bg);
-                border-radius: 8px;
-                padding: 4px;
-                border: 1px solid var(--card-border);
-                gap: 4px;
-            }
-            
-            .stTabs [data-baseweb="tab"] {
-                color: var(--text-secondary);
-                border-radius: 6px;
-                padding: 10px 20px;
-                font-weight: 500;
-                transition: all 0.2s ease;
-            }
-            
-            .stTabs [aria-selected="true"] {
-                background-color: var(--primary-color) !important;
-                color: white !important;
-                font-weight: 600;
-            }
-
-            /* Plotly Charts */
-            [data-testid="stPlotlyChart"] {
-                background-color: var(--secondary-bg);
-                border-radius: 10px;
-                border: 1px solid var(--card-border);
-                padding: 15px;
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            }
-
-            /* Alert Boxes */
-            .alert-box {
-                padding: 20px;
-                border-radius: 10px;
-                margin: 15px 0;
-                background-color: var(--secondary-bg);
-                border-left: 5px solid;
-                border: 1px solid var(--card-border);
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            }
-            
-            .critical { 
-                border-left-color: var(--sev-critical); 
-                background: linear-gradient(135deg, rgba(220, 38, 38, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%);
-            }
-            
-            .high { 
-                border-left-color: var(--sev-high); 
-                background: linear-gradient(135deg, rgba(234, 88, 12, 0.1) 0%, rgba(234, 88, 12, 0.05) 100%);
-            }
-
-            .medium { border-left-color: var(--sev-medium); }
-            .low { border-left-color: var(--sev-low); }
-
-            /* Chat messages */
-            .user-msg, .bot-msg {
-                padding: 12px 16px;
-                border-radius: 10px;
-                margin: 8px 0;
-                border: 1px solid var(--card-border);
-            }
-            .user-msg { background: rgba(0, 102, 204, 0.08); border-left: 4px solid var(--primary-color); }
-            .bot-msg { background: var(--secondary-bg); border-left: 4px solid var(--sev-normal); }
-
-            /* Top header bar */
-            header[data-testid="stHeader"] {
-                background: var(--background-color);
-                border-bottom: 1px solid var(--card-border);
-            }
-
-            /* Input Fields - Light Mode */
-            .stTextInput > div > div > input, 
-            .stNumberInput > div > div > input,
-            .stTextArea > div > div > textarea {
-                background-color: var(--secondary-bg);
-                color: var(--text-primary);
-                border: 2px solid var(--card-border);
-                border-radius: 8px;
-                padding: 10px;
-                font-weight: 500;
-            }
-            
-            .stTextInput > div > div > input:focus,
-            .stNumberInput > div > div > input:focus,
-            .stTextArea > div > div > textarea:focus {
-                border-color: var(--primary-color);
-                box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.2);
-                outline: none;
-            }
-
-            /* Expander */
-            .streamlit-expanderHeader {
-                background-color: var(--secondary-bg);
-                color: var(--text-primary);
-                border-radius: 8px;
-                border: 1px solid var(--card-border);
-                font-weight: 600;
-                padding: 12px;
-            }
-
-            /* Dataframes */
-            .dataframe {
-                background-color: var(--secondary-bg) !important;
-                color: var(--text-primary) !important;
-                border: 1px solid var(--card-border) !important;
-            }
-            
-            .dataframe th {
-                background-color: rgba(0, 102, 204, 0.1) !important;
-                color: var(--text-primary) !important;
-                font-weight: 700 !important;
-            }
-
-            /* Success/Error Messages */
-            .stAlert {
-                border-radius: 8px !important;
-                border-left: 5px solid !important;
-            }
-            
-            .stAlert p {
-                color: var(--text-primary) !important;
-                font-weight: 500;
-            }
-
-            /* Scrollbar */
-            ::-webkit-scrollbar {
-                width: 8px;
-                height: 8px;
-            }
-            
-            ::-webkit-scrollbar-track {
-                background: var(--secondary-bg);
-            }
-            
-            ::-webkit-scrollbar-thumb {
-                background: var(--text-muted);
-                border-radius: 4px;
-            }
-
-            /* Ensure all text is visible */
-            .stApp *:not(:is([data-testid="stMetricValue"], [data-testid="stMetricValue"] *,
-                             .stTabs [aria-selected="true"], .stTabs [aria-selected="true"] *,
-                             .stButton > button, .stButton > button *)) {
-                color: var(--text-primary) !important;
-            }
-
-            /* ...but keep accent colours on text nested inside those elements */
-            .stApp [data-testid="stMetricValue"] * {
-                color: var(--primary-color) !important;
-            }
-            .stApp .stTabs [aria-selected="true"] *,
-            .stApp .stButton > button * {
-                color: white !important;
-            }
-        </style>
-        """
-    else:  # DARK THEME - AGGRESSIVE FIX FOR INPUT FIELDS
-        return """
-        <style>
-            /* GLOBAL DARK THEME VARIABLES */
-            :root {
-                --primary-color: #00ff9d;
-                --primary-hover: #00cc7a;
-                --background-color: #0a0e17;
-                --card-bg: #1a1f2e;
-                --card-border: rgba(255, 255, 255, 0.1);
-                --text-primary: #ffffff;
-                --text-secondary: #e0e0e0;
-                --text-muted: #8a95a6;
-                --input-bg: #1a1f2e;
-                --input-border: rgba(255, 255, 255, 0.2);
-                --input-text: #ffffff;
-                --sidebar-bg: rgba(17, 24, 39, 0.98);
-                --sidebar-text: #ffffff;
-                --sev-critical: #ff4757;
-                --sev-high: #ffa502;
-                --sev-medium: #ffd32a;
-                --sev-low: #0fbcf9;
-                --sev-normal: #00ff9d;
-                --transparent-blue: rgba(0, 100, 255, 0.1);
-            }
-
-            /* ========================================== */
-            /* AGGRESSIVE INPUT FIELD FIXES - DARK MODE */
-            /* ========================================== */
-            
-            /* FORCE ALL INPUT FIELDS TO DARK BACKGROUND AND WHITE TEXT */
-            input[type="text"],
-            input[type="number"],
-            input[type="password"],
-            input[type="email"],
-            input[type="tel"],
-            input[type="url"],
-            input[type="search"],
-            input[type="date"],
-            input[type="time"],
-            input[type="datetime-local"],
-            textarea,
-            select {
-                background-color: var(--input-bg) !important;
-                color: var(--input-text) !important;
-                border: 2px solid var(--input-border) !important;
-                border-radius: 8px !important;
-                padding: 12px 16px !important;
-                font-size: 1rem !important;
-                font-weight: 500 !important;
-                caret-color: var(--primary-color) !important;
-            }
-            
-            /* Specific Streamlit input selectors */
-            .stTextInput input,
-            .stNumberInput input,
-            .stTextArea textarea,
-            [data-testid="stTextInput"] input,
-            [data-testid="stNumberInput"] input,
-            [data-testid="stTextArea"] textarea {
-                background-color: var(--input-bg) !important;
-                color: var(--input-text) !important;
-                border: 2px solid var(--input-border) !important;
-                border-radius: 8px !important;
-                padding: 12px 16px !important;
-                font-size: 1rem !important;
-                font-weight: 500 !important;
-                caret-color: var(--primary-color) !important;
-            }
-            
-            /* Focus states */
-            input:focus,
-            textarea:focus,
-            select:focus,
-            .stTextInput input:focus,
-            .stNumberInput input:focus,
-            .stTextArea textarea:focus {
-                border-color: var(--primary-color) !important;
-                box-shadow: 0 0 0 3px rgba(0, 255, 157, 0.2) !important;
-                outline: none !important;
-                background-color: #222836 !important;
-            }
-            
-            /* Placeholder text */
-            input::placeholder,
-            textarea::placeholder {
-                color: var(--text-muted) !important;
-                opacity: 0.8 !important;
-            }
-            
-            /* Input labels */
-            .stTextInput label,
-            .stNumberInput label,
-            .stTextArea label,
-            .stSelectbox label,
-            [data-testid="stTextInput"] label,
-            [data-testid="stNumberInput"] label,
-            [data-testid="stTextArea"] label {
-                color: var(--text-primary) !important;
-                font-weight: 600 !important;
-                margin-bottom: 8px !important;
-                display: block !important;
-                font-size: 1rem !important;
-            }
-            
-            /* ========================================== */
-            /* MAIN APP BACKGROUND */
-            /* ========================================== */
-            .stApp {
-                background-color: var(--background-color) !important;
-                color: var(--text-primary) !important;
-                font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
-                line-height: 1.6;
-            }
-            /* Header – solid black strip above title in dark mode */
+BASE_CSS = """
+/* ---------- App shell ---------- */
+.stApp { background-color: var(--bg); }
 header[data-testid="stHeader"] {
-    background: #000000;              /* pure black */
-    backdrop-filter: none;
-    border-bottom: 1px solid rgba(34, 197, 94, 0.30);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
 }
-header[data-testid="stHeader"] * {
-    color: var(--text-primary) !important;
+section[data-testid="stSidebar"] {
+    background-color: var(--surface);
+    border-right: 1px solid var(--border);
 }
-
-            /* Force all text in app to be white */
-            .stApp,
-            .stApp *,
-            .stApp p,
-            .stApp div,
-            .stApp span,
-            .stApp h1,
-            .stApp h2,
-            .stApp h3,
-            .stApp h4,
-            .stApp h5,
-            .stApp h6 {
-                color: var(--text-primary) !important;
-            }
-
-            /* Exceptions for colored elements */
-            [data-testid="stMetricValue"] {
-                color: var(--primary-color) !important;
-            }
-  
-        /* ========================================== */
-        /* HEADER STYLING - WHITE TEXT */
-        /* ========================================== */
-        .main-header-container {
-            background: linear-gradient(135deg, 
-                rgba(0, 255, 157, 0.15) 0%, 
-                rgba(0, 204, 255, 0.1) 50%,
-                rgba(0, 255, 157, 0.05) 100%);
-            padding: 2.5rem;
-            border-radius: 15px;
-            margin-bottom: 2.5rem;
-            border-left: 8px solid var(--primary-color);
-            box-shadow: 0 8px 32px rgba(0, 255, 157, 0.15);
-            text-align: center;
-        }
-        
-        .main-header {
-            font-family: 'Segoe UI', 'Courier New', monospace;
-            font-size: 3.5rem;
-            font-weight: 900;
-            background: linear-gradient(90deg, #00ff9d 0%, #00ccff 50%, #00ff9d 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin: 0;
-            text-shadow: 0 0 40px rgba(0, 255, 157, 0.5);
-            letter-spacing: 1.5px;
-            line-height: 1.2;
-            background-size: 200% auto;
-            animation: shimmer 3s infinite linear;
-        }
-        
-        @keyframes shimmer {
-            0% { background-position: 0% center; }
-            100% { background-position: 200% center; }
-        }
-        
-            
-            .header-subtitle {
-                font-size: 1.3rem;
-                color: var(--text-secondary) !important;
-                margin-top: 0.8rem;
-                font-weight: 500;
-                letter-spacing: 0.5px;
-            }
-            
-            /* ========================================== */
-            /* SUBHEADERS */
-            /* ========================================== */
-            .stSubheader, .st-emotion-cache-16txtl3 {
-                color: var(--text-primary) !important;
-                font-weight: 700 !important;
-                border-left: 4px solid var(--primary-color);
-                padding-left: 15px;
-                margin-top: 2rem !important;
-                background: rgba(26, 31, 46, 0.5);
-                padding: 12px 15px;
-                border-radius: 0 8px 8px 0;
-            }
-            
-            /* ========================================== */
-            /* METRIC CARDS */
-            /* ========================================== */
-            div[data-testid="stMetric"] {
-                background: var(--card-bg);
-                border: 1px solid var(--card-border);
-                border-radius: 12px;
-                padding: 25px 20px;
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-                transition: all 0.4s ease;
-                min-height: 130px;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-            }
-            
-            [data-testid="stMetricValue"] {
-                font-size: 2.8rem !important;
-                font-weight: 800 !important;
-                color: var(--primary-color) !important;
-                text-shadow: 0 0 25px rgba(0, 255, 157, 0.7);
-                line-height: 1.2;
-            }
-            
-            [data-testid="stMetricLabel"] {
-                color: var(--text-secondary) !important;
-                font-weight: 600 !important;
-                font-size: 1rem !important;
-                margin-top: 8px !important;
-            }
-            
-            /* ========================================== */
-            /* SIDEBAR */
-            /* ========================================== */
-            section[data-testid="stSidebar"] {
-                background-color: var(--sidebar-bg) !important;
-                border-right: 1px solid var(--card-border);
-            }
-            
-            section[data-testid="stSidebar"] *,
-            section[data-testid="stSidebar"] .st-emotion-cache-16txtl3,
-            section[data-testid="stSidebar"] h1,
-            section[data-testid="stSidebar"] h2,
-            section[data-testid="stSidebar"] h3,
-            section[data-testid="stSidebar"] h4,
-            section[data-testid="stSidebar"] h5,
-            section[data-testid="stSidebar"] h6,
-            section[data-testid="stSidebar"] p,
-            section[data-testid="stSidebar"] span,
-            section[data-testid="stSidebar"] div,
-            section[data-testid="stSidebar"] label {
-                color: var(--sidebar-text) !important;
-                font-weight: 500;
-            }
-            
-            /* ========================================== */
-            /* BUTTONS */
-            /* ========================================== */
-            .stButton > button {
-                background: linear-gradient(135deg, 
-                    rgba(0, 184, 148, 0.9) 0%, 
-                    rgba(0, 160, 133, 0.9) 100%);
-                color: #0a0e17 !important;
-                border: none;
-                border-radius: 8px;
-                font-weight: 700;
-                padding: 12px 28px;
-                text-transform: uppercase;
-                letter-spacing: 0.8px;
-                transition: all 0.3s ease;
-                box-shadow: 0 8px 24px rgba(0, 184, 148, 0.4);
-            }
-            
-            .stButton > button:hover {
-                transform: translateY(-4px);
-                box-shadow: 0 0 35px rgba(0, 255, 157, 0.6);
-            }
-            
-            /* ========================================== */
-            /* TABS */
-            /* ========================================== */
-            .stTabs [data-baseweb="tab-list"] {
-                background: rgba(26, 31, 46, 0.8);
-                border-radius: 10px;
-                padding: 6px;
-                border: 1px solid var(--card-border);
-                gap: 4px;
-            }
-            
-            .stTabs [data-baseweb="tab"] {
-                color: var(--text-secondary);
-                border-radius: 8px;
-                padding: 12px 24px;
-                font-weight: 500;
-                transition: all 0.3s ease;
-            }
-            
-            .stTabs [aria-selected="true"] {
-                color: var(--primary-color) !important;
-                border: 1px solid var(--primary-color);
-                font-weight: 700;
-                text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
-                background: rgba(0, 255, 157, 0.15) !important;
-            }
-            
-            /* ========================================== */
-            /* DROPDOWNS */
-            /* ========================================== */
-            .stSelectbox > div > div {
-                background: var(--input-bg) !important;
-                border: 2px solid var(--input-border) !important;
-                border-radius: 8px !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .stSelectbox [data-baseweb="popover"] {
-                background: var(--card-bg) !important;
-                border: 1px solid var(--card-border) !important;
-                border-radius: 8px !important;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
-            }
-            
-            .stSelectbox [data-baseweb="popover"] li {
-                color: var(--text-primary) !important;
-                background: transparent !important;
-                padding: 12px 16px !important;
-                border-bottom: 1px solid var(--card-border) !important;
-            }
-            /* ========================================== */
-            /* FILE UPLOADER */
-            /* ========================================== */
-            .stFileUploader section {
-                border: 2px dashed var(--input-border) !important;
-                border-radius: 10px !important;
-                background: var(--card-bg) !important;
-            }
-
-            .stFileUploader section:hover {
-                border-color: var(--primary-color) !important;
-            }
-
-            /* ========================================== */
-            /* RADIO BUTTONS */
-            /* ========================================== */
-            .stRadio label,
-            .stCheckbox label,
-            .stRadio [role="radiogroup"] label {
-                color: var(--text-primary) !important;
-                font-weight: 500 !important;
-            }
-            
-            .stRadio [role="radiogroup"] {
-                background: rgba(26, 31, 46, 0.7);
-                padding: 16px;
-                border-radius: 10px;
-                border: 1px solid var(--card-border);
-            }
-            
-            /* ========================================== */
-            /* ALERT BOXES */
-            /* ========================================== */
-            .alert-box {
-                padding: 25px;
-                border-radius: 10px;
-                margin: 20px 0;
-                background: var(--card-bg);
-                border-left: 8px solid;
-                border: 1px solid var(--card-border);
-                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-            }
-            
-            .critical { 
-                border-left-color: var(--sev-critical);
-                background: linear-gradient(135deg, 
-                    rgba(255, 71, 87, 0.25) 0%, 
-                    rgba(255, 71, 87, 0.1) 100%);
-            }
-
-            .high { border-left-color: var(--sev-high); }
-            .medium { border-left-color: var(--sev-medium); }
-            .low { border-left-color: var(--sev-low); }
-
-            /* Chat messages */
-            .user-msg, .bot-msg {
-                padding: 12px 16px;
-                border-radius: 10px;
-                margin: 8px 0;
-                border: 1px solid var(--card-border);
-            }
-            .user-msg { background: rgba(0, 204, 255, 0.08); border-left: 4px solid #00ccff; }
-            .bot-msg { background: var(--card-bg); border-left: 4px solid var(--primary-color); }
-            
-            /* ========================================== */
-            /* EXPANDER - BASE STYLING */
-            /* ========================================== */
-            .streamlit-expanderHeader {
-                background: var(--card-bg);
-                color: var(--text-primary) !important;
-                border-radius: 8px;
-                border: 1px solid var(--card-border);
-                font-weight: 700;
-                padding: 14px;
-            }
-            
-            /* ========================================== */
-            /* DATAFRAMES */
-            /* ========================================== */
-            .dataframe {
-                background: var(--card-bg) !important;
-                color: var(--text-primary) !important;
-                border: 1px solid var(--card-border) !important;
-            }
-            
-            .dataframe th {
-                background: rgba(0, 255, 157, 0.2) !important;
-                font-weight: 700 !important;
-            }
-            
-            /* ========================================== */
-            /* SCROLLBAR */
-            /* ========================================== */
-            ::-webkit-scrollbar {
-                width: 10px;
-                height: 10px;
-            }
-            
-            ::-webkit-scrollbar-track {
-                background: rgba(26, 31, 46, 0.5);
-                border-radius: 5px;
-            }
-            
-            ::-webkit-scrollbar-thumb {
-                background: var(--text-muted);
-                border-radius: 5px;
-            }
-            
-            ::-webkit-scrollbar-thumb:hover {
-                background: var(--text-secondary);
-            }
-            
-            /* ========================================== */
-            /* ADDITIONAL GLOBAL OVERRIDES */
-            /* ========================================== */
-            
-            /* Ensure all text in forms is visible */
-            form * {
-                color: var(--text-primary) !important;
-            }
-            
-            /* Override any inline styles Streamlit might add */
-            input[style*="background-color"],
-            textarea[style*="background-color"] {
-                background-color: var(--input-bg) !important;
-                color: var(--input-text) !important;
-            }
-            
-            /* Force dark mode on all form elements */
-            .stTextInput input,
-            .stNumberInput input,
-            .stTextArea textarea {
-                -webkit-appearance: none !important;
-                -moz-appearance: none !important;
-                appearance: none !important;
-                background-color: var(--input-bg) !important;
-                color: var(--input-text) !important;
-            }
-            
-            /* Target even more specific selectors */
-            div[data-baseweb="input"] input,
-            div[data-baseweb="textarea"] textarea {
-                background-color: var(--input-bg) !important;
-                color: var(--input-text) !important;
-                border: 2px solid var(--input-border) !important;
-            }
-            
-            /* Chrome autofill fix */
-            input:-webkit-autofill,
-            input:-webkit-autofill:hover, 
-            input:-webkit-autofill:focus, 
-            input:-webkit-autofill:active {
-                -webkit-box-shadow: 0 0 0 30px var(--input-bg) inset !important;
-                -webkit-text-fill-color: var(--input-text) !important;
-                caret-color: var(--primary-color) !important;
-            }
-            
-            /* ========================================== */
-            /* CRITICAL FIX FOR ALL ALERT CONTENT IN TAB 2 */
-            /* ========================================== */
-            
-            /* Target ALL content in Live Alerts tab (Tab 2) */
-            section[data-testid="stTabPanel"]:nth-child(2) .stJson,
-            section[data-testid="stTabPanel"]:nth-child(2) .stJson *,
-            section[data-testid="stTabPanel"]:nth-child(2) pre,
-            section[data-testid="stTabPanel"]:nth-child(2) code,
-            section[data-testid="stTabPanel"]:nth-child(2) .stMarkdown,
-            section[data-testid="stTabPanel"]:nth-child(2) .stMarkdown * {
-                background-color: rgba(0, 0, 0, 0.8) !important;
-                color: #ffffff !important;
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                border-radius: 8px;
-                padding: 15px !important;
-                margin: 10px 0 !important;
-            }
-            
-            /* Specifically target JSON data */
-            .stJson,
-            .stJson *,
-            .stJson pre,
-            .stJson code {
-                background-color: rgba(0, 0, 0, 0.8) !important;
-                color: #ffffff !important;
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                border-radius: 8px;
-                padding: 15px !important;
-                margin: 10px 0 !important;
-            }
-            
-            /* ========================================== */
-            /* ATTACK DETECTED SECTION AND FOLLOWING CONTENT */
-            /* ========================================== */
-            
-            /* Attack detected messages - transparent blue */
-            .stError,
-            .stAlert,
-            .stSuccess,
-            .stInfo,
-            .stWarning {
-                background-color: rgba(0, 100, 255, 0.2) !important;
-                border: 1px solid rgba(0, 100, 255, 0.5) !important;
-                border-radius: 8px;
-                padding: 20px !important;
-                margin: 15px 0 !important;
-                color: #ffffff !important;
-            }
-            
-            /* Text that comes immediately after attack detected */
-            .stError + div,
-            .stError ~ div:not(.streamlit-expanderHeader):not(.stButton):not(.stCheckbox):not(.stRadio):not(.stSelectbox) {
-                background-color: rgba(0, 100, 255, 0.15) !important;
-                border: 1px solid rgba(0, 100, 255, 0.3) !important;
-                border-radius: 8px;
-                padding: 20px !important;
-                margin: 15px 0 !important;
-            }
-            
-            /* Make sure text is white in these sections */
-            .stError + div *,
-            .stError ~ div:not(.streamlit-expanderHeader):not(.stButton):not(.stCheckbox):not(.stRadio):not(.stSelectbox) * {
-                color: #ffffff !important;
-            }
-            
-            /* ========================================== */
-            /* CRITICAL ALERT HEADER - WHITE BACKGROUND, BLACK TEXT */
-            /* ========================================== */
-            
-            /* Critical alert headers */
-            .streamlit-expanderHeader:has(+ .streamlit-expanderContent .critical),
-            .streamlit-expanderHeader[aria-expanded="true"]:has(+ .streamlit-expanderContent .critical),
-            .streamlit-expanderHeader[aria-expanded="false"]:has(+ .streamlit-expanderContent .critical) {
-                background-color: #ffffff !important;
-                color: #000000 !important;
-                border: 2px solid var(--sev-critical) !important;
-                font-weight: 800 !important;
-            }
-            
-            /* ========================================== */
-            /* ALERT EXPANDER CONTENT - TRANSPARENT BLUE */
-            /* ========================================== */
-            
-            /* Alert expander content */
-            .streamlit-expanderContent {
-                background-color: rgba(0, 100, 255, 0.1) !important;
-                border: 1px solid rgba(0, 100, 255, 0.3) !important;
-                border-radius: 8px;
-                margin-top: 10px !important;
-            }
-            
-            /* Text inside alert expanders */
-            .streamlit-expanderContent * {
-                color: #ffffff !important;
-                background-color: transparent !important;
-            }
-            
-            /* Alert boxes inside expanders */
-            .streamlit-expanderContent .alert-box {
-                background-color: rgba(0, 100, 255, 0.2) !important;
-                border: 1px solid rgba(0, 100, 255, 0.5) !important;
-                color: #ffffff !important;
-            }
-            
-            /* Columns inside expanders */
-            .streamlit-expanderContent .stColumn,
-            .streamlit-expanderContent .stColumn * {
-                color: #ffffff !important;
-                background-color: transparent !important;
-            }
-            
-            /* ========================================== */
-            /* SPECIFIC FOR TAB 2 - LIVE ALERTS */
-            /* ========================================== */
-            
-            /* Ensure everything in Tab 2 has proper contrast */
-            section[data-testid="stTabPanel"]:nth-child(2) * {
-                color: #ffffff !important;
-            }
-            
-            /* Force dark backgrounds for all containers in Tab 2 */
-            section[data-testid="stTabPanel"]:nth-child(2) div:not(.streamlit-expanderHeader):not(.stButton) {
-                background-color: transparent !important;
-            }
-            
-            /* Make sure all text is visible */
-            section[data-testid="stTabPanel"]:nth-child(2) p,
-            section[data-testid="stTabPanel"]:nth-child(2) div,
-            section[data-testid="stTabPanel"]:nth-child(2) span,
-            section[data-testid="stTabPanel"]:nth-child(2) strong {
-                color: #ffffff !important;
-            }
-            
-            /* ========================================== */
-            /* FIX FOR JSON SPECIFICALLY */
-            /* ========================================== */
-            
-            /* Override any Streamlit JSON styling */
-            .stJson {
-                background-color: rgba(0, 0, 0, 0.8) !important;
-            }
-            
-            .stJson pre {
-                background-color: rgba(0, 0, 0, 0.8) !important;
-                color: #ffffff !important;
-                border: 1px solid rgba(255, 255, 255, 0.3) !important;
-                padding: 20px !important;
-                border-radius: 8px;
-                overflow: auto;
-            }
-            
-            /* Make JSON syntax highlighting visible */
-            .stJson span {
-                color: #ffffff !important;
-                background-color: transparent !important;
-            }
-            
-            /* ========================================== */
-            /* ADD EXTRA SAFETY FOR ALL DARK BACKGROUNDS */
-            /* ========================================== */
-            
-            /* Force dark backgrounds for critical elements */
-            div[style*="background-color: white"],
-            div[style*="background-color: #fff"],
-            div[style*="background-color: #ffffff"],
-            pre[style*="background-color: white"],
-            pre[style*="background-color: #fff"],
-            pre[style*="background-color: #ffffff"] {
-                background-color: rgba(0, 0, 0, 0.8) !important;
-                color: #ffffff !important;
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
-            }
-        </style>
-        """
+.block-container { padding-top: 3.5rem; max-width: 1400px; }
+hr { border-color: var(--border) !important; }
+/* ---------- Page header ---------- */
+.main-header-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    border-radius: 10px;
+    padding: 1.4rem 1.75rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow);
+}
+.main-header-container .main-header {
+    color: var(--text);
+    font-size: 1.85rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    margin: 0;
+    padding: 0;
+}
+.header-subtitle {
+    color: var(--text-2);
+    font-size: 0.95rem;
+    margin-top: 0.35rem;
+}
+/* ---------- Metric cards ---------- */
+div[data-testid="stMetric"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.15rem;
+    min-height: 128px;
+    box-shadow: var(--shadow);
+}
+[data-testid="stMetricLabel"] p {
+    color: var(--text-2);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+[data-testid="stMetricValue"] {
+    color: var(--text);
+    font-size: 1.75rem;
+    font-weight: 700;
+}
+/* ---------- Tabs ---------- */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border);
+}
+.stTabs [data-baseweb="tab"] {
+    padding: 0.6rem 1rem;
+    color: var(--text-2);
+}
+.stTabs [data-baseweb="tab"] p { font-weight: 600; }
+.stTabs [aria-selected="true"] { color: var(--primary); }
+/* ---------- Buttons ---------- */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+    font-weight: 600;
+    border-radius: 8px;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+[data-testid="stBaseButton-secondary"]:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-soft);
+}
+/* ---------- Charts ---------- */
+[data-testid="stPlotlyChart"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+/* ---------- Expanders ---------- */
+[data-testid="stExpander"] details {
+    background: var(--surface);
+    border-color: var(--border);
+    border-radius: 10px;
+}
+/* ---------- Alert severity strip (top of each alert expander) ---------- */
+.alert-box {
+    height: 4px;
+    border-radius: 2px;
+    margin: 0 0 0.75rem 0;
+    background: var(--muted);
+}
+.alert-box.critical { background: var(--sev-critical); }
+.alert-box.high { background: var(--sev-high); }
+.alert-box.medium { background: var(--sev-medium); }
+.alert-box.low { background: var(--sev-low); }
+/* ---------- Chat messages ---------- */
+.user-msg, .bot-msg {
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    margin: 0.5rem 0;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+.user-msg { background: var(--primary-soft); border-left: 3px solid var(--primary); }
+.bot-msg { background: var(--surface); border-left: 3px solid var(--sev-normal); }
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+"""
 
 # Apply the selected theme CSS
 st.markdown(get_theme_css(st.session_state.theme if st.session_state.theme == 'auto' else ui_theme), unsafe_allow_html=True)
@@ -2080,17 +1251,17 @@ with tab1:
                         # Create color list based on theme
                         if ui_theme == 'dark':
                             color_map = {
-                                'CRITICAL': '#ff4757',
-                                'HIGH': '#ffa502',
-                                'MEDIUM': '#ffd32a',
-                                'LOW': '#0fbcf9'
+                                'CRITICAL': '#f87171',
+                                'HIGH': '#fb923c',
+                                'MEDIUM': '#facc15',
+                                'LOW': '#38bdf8'
                             }
                         else:
                             color_map = {
                                 'CRITICAL': '#dc3545',
                                 'HIGH': '#fd7e14',
                                 'MEDIUM': '#ffc107',
-                                'LOW': '#0dcaf0'
+                                'LOW': '#0891b2'
                             }
                         
                         colors = [color_map.get(sev, '#95a5a6') for sev in severity_counts.index]
@@ -2133,7 +1304,7 @@ with tab1:
                     })
                     
                     plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                    colors = ['#00ff9d', '#ff4757'] if ui_theme == 'dark' else ['#198754', '#dc3545']
+                    colors = ['#34d399', '#f87171'] if ui_theme == 'dark' else ['#198754', '#dc3545']
                     
                     fig_normal = px.pie(
                         values=normal_anomaly_counts.values,
@@ -2173,7 +1344,7 @@ with tab1:
                         timeline = df_anomalies.groupby('hour').size().reset_index(name='count')
                         
                         plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                        line_color = '#ff4757' if ui_theme == 'dark' else '#dc3545'
+                        line_color = '#f87171' if ui_theme == 'dark' else '#dc3545'
                         
                         fig_timeline = px.line(
                             timeline,
@@ -2195,7 +1366,7 @@ with tab1:
                     with time_col2:
                         # Anomaly score distribution
                         plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                        bar_color = '#00ff9d' if ui_theme == 'dark' else '#198754'
+                        bar_color = '#34d399' if ui_theme == 'dark' else '#198754'
                         
                         fig_hist = px.histogram(
                             df_anomalies,
@@ -2222,7 +1393,7 @@ with tab1:
                         protocol_counts = df_anomalies['protocol_type'].value_counts()
                         
                         plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                        bar_color = '#0fbcf9' if ui_theme == 'dark' else '#0dcaf0'
+                        bar_color = '#38bdf8' if ui_theme == 'dark' else '#0891b2'
                         
                         fig_protocol = px.bar(
                             x=protocol_counts.index,
@@ -2244,7 +1415,7 @@ with tab1:
                         service_counts = df_anomalies['service'].value_counts().head(10)
                         
                         plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                        bar_color = '#ff4757' if ui_theme == 'dark' else '#fd7e14'
+                        bar_color = '#f87171' if ui_theme == 'dark' else '#fd7e14'
                         
                         fig_service = px.bar(
                             x=service_counts.index,
@@ -2273,17 +1444,17 @@ with tab1:
                         
                         if ui_theme == 'dark':
                             color_map = {
-                                'CRITICAL': '#ff4757',
-                                'HIGH': '#ffa502',
-                                'MEDIUM': '#ffd32a',
-                                'LOW': '#0fbcf9'
+                                'CRITICAL': '#f87171',
+                                'HIGH': '#fb923c',
+                                'MEDIUM': '#facc15',
+                                'LOW': '#38bdf8'
                             }
                         else:
                             color_map = {
                                 'CRITICAL': '#dc3545',
                                 'HIGH': '#fd7e14',
                                 'MEDIUM': '#ffc107',
-                                'LOW': '#0dcaf0'
+                                'LOW': '#0891b2'
                             }
                         
                         fig_scatter = px.scatter(
@@ -2313,17 +1484,17 @@ with tab1:
                         
                         if ui_theme == 'dark':
                             color_map = {
-                                'CRITICAL': '#ff4757',
-                                'HIGH': '#ffa502',
-                                'MEDIUM': '#ffd32a',
-                                'LOW': '#0fbcf9'
+                                'CRITICAL': '#f87171',
+                                'HIGH': '#fb923c',
+                                'MEDIUM': '#facc15',
+                                'LOW': '#38bdf8'
                             }
                         else:
                             color_map = {
                                 'CRITICAL': '#dc3545',
                                 'HIGH': '#fd7e14',
                                 'MEDIUM': '#ffc107',
-                                'LOW': '#0dcaf0'
+                                'LOW': '#0891b2'
                             }
                         
                         fig_conn = px.scatter(
@@ -2356,17 +1527,17 @@ with tab1:
                         
                         if ui_theme == 'dark':
                             severity_colors = {
-                                'CRITICAL': '#ff4757',
-                                'HIGH': '#ffa502',
-                                'MEDIUM': '#ffd32a',
-                                'LOW': '#0fbcf9'
+                                'CRITICAL': '#f87171',
+                                'HIGH': '#fb923c',
+                                'MEDIUM': '#facc15',
+                                'LOW': '#38bdf8'
                             }
                         else:
                             severity_colors = {
                                 'CRITICAL': '#dc3545',
                                 'HIGH': '#fd7e14',
                                 'MEDIUM': '#ffc107',
-                                'LOW': '#0dcaf0'
+                                'LOW': '#0891b2'
                             }
 
                         for severity in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']:
@@ -2461,8 +1632,8 @@ with tab1:
                     # Theme-aware colors
                     if ui_theme == 'dark':
                         color_discrete_map = {
-                            'Normal': '#00ff9d',
-                            'Anomaly': '#ff4757'
+                            'Normal': '#34d399',
+                            'Anomaly': '#f87171'
                         }
                         plotly_template = "plotly_dark"
                         bg_color = 'rgba(0,0,0,0)'
@@ -2606,17 +1777,17 @@ with tab1:
                         
                         if ui_theme == 'dark':
                             color_map = {
-                                'CRITICAL': '#ff4757',
-                                'HIGH': '#ffa502',
-                                'MEDIUM': '#ffd32a',
-                                'LOW': '#0fbcf9'
+                                'CRITICAL': '#f87171',
+                                'HIGH': '#fb923c',
+                                'MEDIUM': '#facc15',
+                                'LOW': '#38bdf8'
                             }
                         else:
                             color_map = {
                                 'CRITICAL': '#dc3545',
                                 'HIGH': '#fd7e14',
                                 'MEDIUM': '#ffc107',
-                                'LOW': '#0dcaf0'
+                                'LOW': '#0891b2'
                             }
                         
                         colors = [color_map.get(sev, '#95a5a6') for sev in severity_counts.index]
@@ -2661,7 +1832,7 @@ with tab1:
                     timeline = df_alerts.groupby('minute').size().reset_index(name='count')
                     
                     plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                    line_color = '#00ff9d' if ui_theme == 'dark' else '#0066cc'
+                    line_color = '#34d399' if ui_theme == 'dark' else '#0066cc'
                     
                     fig_timeline = px.line(
                         timeline,
@@ -2695,7 +1866,7 @@ with tab1:
                 st.subheader("Attack Score Distribution")
                 
                 plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                bar_color = '#ff4757' if ui_theme == 'dark' else '#dc3545'
+                bar_color = '#f87171' if ui_theme == 'dark' else '#dc3545'
                 
                 fig_hist = px.histogram(
                     df_alerts,
@@ -2736,7 +1907,7 @@ with tab1:
                         protocol_counts = protocols.value_counts()
                         
                         plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                        bar_color = '#0fbcf9' if ui_theme == 'dark' else '#0dcaf0'
+                        bar_color = '#38bdf8' if ui_theme == 'dark' else '#0891b2'
                         
                         fig_protocol = px.bar(
                             x=protocol_counts.index,
@@ -2772,7 +1943,7 @@ with tab1:
                         service_counts = services.value_counts().head(10)
                         
                         plotly_template = "plotly_dark" if ui_theme == 'dark' else "plotly_white"
-                        bar_color = '#ffa502' if ui_theme == 'dark' else '#fd7e14'
+                        bar_color = '#fb923c' if ui_theme == 'dark' else '#fd7e14'
                         
                         fig_service = px.bar(
                             x=service_counts.index,
@@ -2833,17 +2004,17 @@ with tab1:
                             
                             if ui_theme == 'dark':
                                 color_map = {
-                                    'CRITICAL': '#ff4757',
-                                    'HIGH': '#ffa502',
-                                    'MEDIUM': '#ffd32a',
-                                    'LOW': '#0fbcf9'
+                                    'CRITICAL': '#f87171',
+                                    'HIGH': '#fb923c',
+                                    'MEDIUM': '#facc15',
+                                    'LOW': '#38bdf8'
                                 }
                             else:
                                 color_map = {
                                     'CRITICAL': '#dc3545',
                                     'HIGH': '#fd7e14',
                                     'MEDIUM': '#ffc107',
-                                    'LOW': '#0dcaf0'
+                                    'LOW': '#0891b2'
                                 }
                             
                             fig_scatter = px.scatter(
@@ -2904,17 +2075,17 @@ with tab1:
                             
                             if ui_theme == 'dark':
                                 color_map = {
-                                    'CRITICAL': '#ff4757',
-                                    'HIGH': '#ffa502',
-                                    'MEDIUM': '#ffd32a',
-                                    'LOW': '#0fbcf9'
+                                    'CRITICAL': '#f87171',
+                                    'HIGH': '#fb923c',
+                                    'MEDIUM': '#facc15',
+                                    'LOW': '#38bdf8'
                                 }
                             else:
                                 color_map = {
                                     'CRITICAL': '#dc3545',
                                     'HIGH': '#fd7e14',
                                     'MEDIUM': '#ffc107',
-                                    'LOW': '#0dcaf0'
+                                    'LOW': '#0891b2'
                                 }
                             
                             fig_conn = px.scatter(
@@ -3024,7 +2195,7 @@ with tab2:
             "Attack Traffic": "attack"
         }
         
-        if st.button("Analyze New Traffic Sample", key="btn_live_analyze_2"):
+        if st.button("Analyze New Traffic Sample", key="btn_live_analyze_2", type="primary"):
             with st.spinner("Analyzing network traffic..."):
                 sample_traffic = simulate_traffic(traffic_type_map[traffic_type])
                 
@@ -3162,7 +2333,7 @@ with tab3:
                     test_df = pd.read_csv(uploaded_file)
                     st.success(f"Loaded {len(test_df)} records")
                     
-                    if st.button("Analyze Uploaded Data", key="btn_upload_analyze"):
+                    if st.button("Analyze Uploaded Data", key="btn_upload_analyze", type="primary"):
                         with st.spinner("Analyzing network traffic..."):
                             results = []
                             for idx, row in test_df.iterrows():
@@ -3209,7 +2380,7 @@ with tab3:
                 hot = st.number_input("Hot Indicators", value=0, step=1, min_value=0, help="Normal: 0-2, Attack: 5-30")
                 num_file_creations = st.number_input("File Creations", value=0, step=1, min_value=0, help="Normal: 0-2, Attack: 0-20")
         
-            if st.button("Analyze Manual Entry", key="btn_manual_analyze") and model_data:
+            if st.button("Analyze Manual Entry", key="btn_manual_analyze", type="primary") and model_data:
                 with st.spinner("Analyzing network traffic..."):
                     # Calculate rates based on count for more realistic patterns
                     same_srv_rate = 0.9 if count > 0 else 0.0  # Normal traffic has high same service rate
@@ -3305,7 +2476,7 @@ with tab3:
                 "Attack Traffic": "attack"
             }
             
-            if st.button("Analyze New Traffic Sample", key="btn_simulate_analyze"):
+            if st.button("Analyze New Traffic Sample", key="btn_simulate_analyze", type="primary"):
                 with st.spinner("Analyzing network traffic..."):
                     sample_traffic = simulate_traffic(traffic_type_map[traffic_type])
                     result = detect_attack(sample_traffic, model_data)
@@ -3399,7 +2570,7 @@ with tab4:
         
         col1, col2 = st.columns([1, 5])
         with col1:
-            send_btn = st.button("Send", key="btn_chat_send")
+            send_btn = st.button("Send", key="btn_chat_send", type="primary")
         
         if send_btn and user_input:
             st.session_state.chat_messages.append({'role': 'user', 'content': user_input})
@@ -3447,13 +2618,12 @@ with tab5:
     
     st.markdown("### Email Configuration")
     email_status = "Enabled" if EMAIL_CONFIG['enabled'] else "Disabled"
-    status_color = "#00b771" if (EMAIL_CONFIG['enabled'] and ui_theme == 'dark') else "#0066cc" if (EMAIL_CONFIG['enabled'] and ui_theme == 'light') else "#ff2b2b" if ui_theme == 'dark' else "#dc3545"
-    email_bg = "#ffffff" if ui_theme == 'light' else "#1A1C24"
-    email_text_color = "#111827" if ui_theme == 'light' else "#e6e6e6"
+    status_color = "var(--sev-normal)" if EMAIL_CONFIG['enabled'] else "var(--sev-critical)"
 
     st.markdown(f"""
-    <div style="background-color: {email_bg}; padding: 15px; border-radius: 8px;
-                border-left: 4px solid {status_color}; margin: 10px 0; color: {email_text_color};">
+    <div style="background-color: var(--surface); padding: 14px 16px; border-radius: 10px;
+                border: 1px solid var(--border); border-left: 4px solid {status_color};
+                margin: 10px 0; color: var(--text);">
         <strong>Email Alerts:</strong>
         <span style="color: {status_color}; font-weight: 600;">{email_status}</span>
     </div>
@@ -3518,10 +2688,7 @@ footer_col1, footer_col2, footer_col3 = st.columns(3)
 
 
 with footer_col1:
-    if ui_theme == 'dark':
-        status_color = "#00ff9d" if st.session_state.monitoring_active else "#ff2b2b"
-    else:
-        status_color = "#0066cc" if st.session_state.monitoring_active else "#dc3545"
+    status_color = "var(--sev-normal)" if st.session_state.monitoring_active else "var(--sev-critical)"
     status_text = "Monitoring Active" if st.session_state.monitoring_active else "Monitoring Paused"
     st.markdown(f'<span style="color: {status_color}; font-weight: 600;">Status:</span> {status_text}', unsafe_allow_html=True)
 
